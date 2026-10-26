@@ -1,0 +1,9 @@
+{
+  "name": "export-speed-spike",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway benchmark: decode video, draw Canvas 2D overlay, hardware-encode MP4.",
+  "dependencies": {
+    "mediabunny": "^1.62.1"
+  }
+}
