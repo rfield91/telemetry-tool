@@ -35,7 +35,33 @@ export function guessTimeMapping(parsed: ParsedCsv): TimeMapping {
   return { column, unit, clock: guessClock(firstSeconds) }
 }
 
-/** Every numeric column except time, with a guessed canonical role each. */
+/** Units that are unambiguous for a role. */
+const IMPLIED_UNITS: Partial<Record<CanonicalChannelId, string>> = {
+  rpm: 'rpm',
+  latitude: 'deg',
+  longitude: 'deg',
+  heading: 'deg',
+}
+
+const ACCELERATIONS = new Set<CanonicalChannelId>(['lateralAccel', 'longitudinalAccel', 'verticalAccel'])
+
+/**
+ * Unit for a mapped column whose header doesn't say. Accelerations are told
+ * apart by size: cars stay well under 4 g, while m/s² values (or gravity on
+ * a vertical axis) go past 4.
+ */
+function impliedUnit(parsed: ParsedCsv, column: string, canonical: CanonicalChannelId): string | undefined {
+  if (IMPLIED_UNITS[canonical]) return IMPLIED_UNITS[canonical]
+  if (!ACCELERATIONS.has(canonical)) return undefined
+  let peak = 0
+  for (const row of parsed.rows) {
+    const value = parseFiniteNumber(row[column])
+    if (value !== null) peak = Math.max(peak, Math.abs(value))
+  }
+  return peak > 0 ? (peak < 4 ? 'g' : 'm/s²') : undefined
+}
+
+/** Every numeric column except time, with a guessed canonical role and unit. */
 export function guessChannelMappings(parsed: ParsedCsv, timeColumn: string): ChannelMapping[] {
   const taken = new Set<CanonicalChannelId>()
   return inferNumericColumns(parsed)
@@ -46,7 +72,8 @@ export function guessChannelMappings(parsed: ParsedCsv, timeColumn: string): Cha
       // One column per canonical role; later matches stay unmapped.
       const canonical = guess && !taken.has(guess) ? guess : undefined
       if (canonical) taken.add(canonical)
-      return { column, canonical, unit: columnUnitText(parsed, column), label: name }
+      const unit = columnUnitText(parsed, column) ?? (canonical ? impliedUnit(parsed, column, canonical) : undefined)
+      return { column, canonical, unit, label: name }
     })
 }
 

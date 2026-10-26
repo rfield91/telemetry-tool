@@ -1,28 +1,25 @@
 # Architecture
 
-Current state of the rebuild (milestone M0 of `docs/REDESIGN-PLAN.md`). The
-original prototype (SVG gauges, transparent WebM export) is preserved at git
-tag `prototype-v0`.
+Current state of the rebuild (milestones M0–M1 of `docs/REDESIGN-PLAN.md`).
+The original prototype (SVG gauges, transparent WebM export) is preserved at
+git tag `prototype-v0`.
 
 ## Overview
 
 ```
-CSV text
-  └─ parseCsv ─────────────► ParsedCsv (headers, rows, metadata, units row)
-        └─ ProfileRegistry.detect ─► LoggerProfile (user → built-in → generic)
-              ├─ time()      ─► time column, unit, clock
-              ├─ channels()  ─► column → canonical channel + unit
-              └─ laps()      ─► Lap[] from logger markers
-        └─ importParsed ───► TelemetrySession
-                               channels (base units), laps, startUtcMs, warnings
-
-Project (.json)  ◄── serializeProject / parseProject
-  └─ createProjectStore ─► Zustand store, Immer patches for undo/redo
+                    ┌──────────── src/core (framework-free, testable) ────────────┐
+CSV text ──► data/  parseCsv → ProfileRegistry → importParsed → TelemetrySession
+                                                                (base units, laps)
+MP4 file ──► media/ readMp4 (sample tables) → camera adapters → VideoProbe
+                    (byte ranges via RandomAccessFile)     (DJI djmd motion)
+Layout   ──► widgets/ OverlayRenderer: cached static layers + per-frame dynamic
+                    └──────────────────────────────────────────────────────────────┘
+src/app (React UI) ── host.ts ──► Electron IPC + media:// │ dev-server endpoints
+Project (.json) ◄── project/ schema + Zustand store with undo/redo
 ```
 
-Everything under `src/core/` is plain TypeScript with no DOM or React
-dependencies, so the same code can run in a worker (planned for parsing and
-sync).
+`src/core/` is plain TypeScript (canvas drawing uses OffscreenCanvas-
+compatible APIs), so the same code can move into workers.
 
 ## Telemetry import (`src/core/data/`)
 
@@ -33,8 +30,8 @@ sync).
 | `units.ts` | Unit table with aliases, base units per quantity, and conversion (incl. °F/°C offsets). |
 | `channels.ts` | Canonical channel ids (speed, yawRate, lateralAccel, …) with display units, plus name heuristics for unknown loggers. |
 | `series.ts` | `Series` (typed arrays), building from rows (sort, drop invalid, last duplicate wins), interpolation. |
-| `gps.ts` | Lat/lon → local east/north metres, and a north-up fit into a box (for track maps and, later, start/finish-line lap detection). |
-| `import.ts` | `importTelemetry` / `importParsed`: builds one shared time base, converts each mapped column to base units, assigns each canonical channel to one column at most, and collects warnings. |
+| `gps.ts` | Lat/lon → local east/north metres, single-point projection, and a north-up fit into a box. |
+| `import.ts` | `importTelemetry` / `importParsed`: one shared time base, each mapped column converted to base units, one column per canonical channel, warnings. |
 
 ### Logger profiles (`src/core/data/profiles/`)
 
@@ -44,34 +41,98 @@ where are the laps (`laps`, optional).
 
 | Profile | Detection | Notes |
 | --- | --- | --- |
-| `solostorm` | `GPS_TIME (ms)` + `SYSTEM_TIME (ms)` headers | Time is Unix ms on the GPS scale. Units come from header suffixes. Laps from `MATH_LAP_NUMBER`. `ACCEL_X` is the lateral axis. |
+| `solostorm` | `GPS_TIME (ms)` + `SYSTEM_TIME (ms)` headers | Unix ms on the GPS scale. Units from header suffixes. Laps from `MATH_LAP_NUMBER`. `ACCEL_X` is lateral. |
 | `aim` | `Format` metadata, GPS headers, or preamble + units row | Relative seconds. Units from the units row. Laps from `Beacon Markers`. |
 | user (`user.ts`) | All saved match headers present | A confirmed mapping saved as JSON (`UserProfileDefinition`). |
-| `generic` | Fallback | Guesses time column, unit, clock and channel roles. Its guesses seed the mapping screen (M1). |
+| `generic` | Fallback | Guesses time column, unit, clock, channel roles, and units the header omits (rpm, degrees; g vs m/s² by magnitude). Seeds the mapping screen. |
 
 `ProfileRegistry` tries user profiles first, then built-ins with high
 confidence, then low-confidence matches, then generic.
 
 ## Laps (`src/core/laps/laps.ts`)
 
-`Lap` has a 1-based session `index`, the logger's own `loggerNumber` when
-available, start/end in session seconds, and a `kind`. When a session has
-more than one lap, the first is `out` and the last `in`. A single segment
-(a one-lap export) is `timed`. `bestLap` considers timed laps only.
+`Lap` has a 1-based session `index`, the logger's `loggerNumber` when
+available, start/end in session seconds and a `kind`. With more than one lap
+the first is `out` and the last `in`; a single segment is `timed`.
+GPS start/finish-line detection is planned, not built.
 
-GPS start/finish-line lap detection for loggers without markers is planned,
-not built.
-
-## Projects (`src/core/project/`)
+## Media (`src/core/media/`)
 
 | File | Responsibility |
 | --- | --- |
-| `schema.ts` | `Project` v1: videos (chapter path lists), telemetry (path + profile id + embedded user mapping), syncs (offset, method, confidence), lap selection with lead-in/out, layout widgets (fractional rects, canonical bindings, style), export settings. |
-| `serialize.ts` | JSON save/load with structural validation and readable errors; rejects files from newer versions; migrations slot in by version. |
-| `store.ts` | Vanilla Zustand store. `update(label, recipe, { coalesceKey })` records Immer patches; `undo`/`redo` apply them; rapid edits with the same key within 1 s merge into one step; history is capped at 200. |
+| `file.ts` | `RandomAccessFile`: size + batched `readRanges`, so thousands of small metadata samples cost one host round trip. |
+| `mp4.ts` | Minimal ISO-BMFF reader: finds `moov` by walking box headers (works with moov-at-end 9 GB files), reads tracks (handler, sample-entry four-cc, size, rotation) and sample tables (offsets, sizes, times). |
+| `protobuf.ts` | Schema-less protobuf decoding for camera metadata. |
+| `cameras/` | `CameraAdapter` registry. `dji.ts` detects the `djmd` track, reads the model (`DJI AC003` → Osmo Action 4), and turns per-frame orientation quaternions into gravity-projected yaw rate. GoPro (GPMF) is planned for M5. |
+| `probe.ts` | `probeVideo`: codec, size, fps, frame count, audio, camera, and whether motion data is available. Picks the longest visual track (DJI adds an MJPEG thumbnail track). |
 
-## Electron shell
+## Widgets (`src/core/widgets/`)
 
-`electron/main.ts` opens the window and handles `csv:open` (returns path,
-name and text). `electron/preload.ts` exposes it as
-`window.telemetryOverlay`. Video, sync and export IPC arrive in M1–M4.
+A `WidgetDefinition` declares inputs (bound to canonical channels by
+default), a fixed aspect, default style derived from the data, and two
+drawing passes:
+
+- `drawStatic` renders the faces, ticks, track outline and rings into a
+  cached layer, keyed by pixel size, style and bound data. It can return
+  prepared data, such as the track map's projection.
+- `drawDynamic` draws only the moving parts every frame.
+
+`OverlayRenderer.render(ctx, frame, widgets, session, time)` positions
+widgets from fractional rects, resolves bindings once per widget, and
+records `lastFrameMs`. `data.ts` converts values to display units (mph, °F,
+psi, g). `defaults.ts` builds a starting layout from the channels present.
+
+| Widget | Inputs | Notes |
+| --- | --- | --- |
+| `gauge` | value (speed) | 240° dial, range from the data's peak |
+| `bar` | value (throttle) | vertical fill |
+| `readout` | value | label + number + unit |
+| `trackMap` | latitude, longitude | outline from the whole session (decimated), car marker |
+| `gMeter` | lateral, longitudinal | rings per 0.5 g, fading 1 s trail, axis-flip options |
+
+## App (`src/app/`, `src/App.tsx`)
+
+- `state.ts` has two stores:
+  - `projectStore`: the undoable document (files, sync offset, layout).
+  - `runtimeStore`: decoded data that's never saved (video probes,
+    sessions, raw CSV text, logger profiles, playback time).
+- `host.ts` (`FileHost`) is the only place that knows where the app runs:
+  - In Electron it uses IPC, and `media://local/<path>` for `<video>`.
+  - In a plain browser it uses the dev-server endpoints, with
+    `window.prompt` for picking files.
+- `player.ts` is the playback clock: it wraps the `<video>` element, or a
+  virtual clock when only telemetry is loaded. It supports seeking and
+  frame stepping, landing mid-frame.
+- `components/Stage.tsx` (the viewer) draws the overlay on every presented video frame
+  using `requestVideoFrameCallback` and that frame's exact `mediaTime`.
+  Telemetry time = video time − offset. It also shows a performance HUD
+  (draw time, presented fps, dropped frames).
+- The layout has three columns:
+  - `MediaPanel` (left): source cards with secondary details folded away,
+    and the lap list with gaps to best.
+  - The viewer and `Transport` (centre): custom timeline with lap bands,
+    hover time and drag scrubbing.
+  - `InspectorPanel` (right): sync offset and overlay layers.
+- Files can also be dropped anywhere in the window (desktop app only;
+  browsers don't expose paths).
+- Styling uses the theme tokens in `src/index.css` and the primitives in
+  `components/ui.tsx`.
+- `components/MappingDialog.tsx` is the column mapping screen. Saving
+  creates a `UserProfileDefinition`, persists it, re-imports with it, and
+  embeds it in the project.
+
+Keyboard: Space play/pause, ←/→ frame step (Shift: 1 s), Ctrl+Z / Ctrl+Y.
+
+## Electron and dev harness
+
+- `electron/main.ts` registers the privileged `media://` scheme (served by
+  `electron/files.ts` with HTTP range support) and IPC for:
+  - picking files
+  - file size, batched range reads and text reads
+  - logger profiles, stored in `userData/logger-profiles.json`
+- The renderer may only read files the user picked (an allowlist in
+  `files.ts`).
+- `dev/fileServer.ts` is a Vite dev-server middleware (`apply: 'serve'`,
+  loopback only) providing the same operations, so `npm run dev:browser`
+  runs the UI in a normal browser. `?video=…&csv=…&offset=…` loads files
+  directly in that mode.

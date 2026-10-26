@@ -12,27 +12,43 @@ builds on. The old prototype is at git tag `prototype-v0`.
 ## Commands
 
 - `npm run dev`: Vite + Electron in dev mode.
-- `npm test`: Vitest (jsdom). Core tests import real logger files from
-  `sample-data/` with Vite `?raw` imports.
+- `npm run dev:browser`: the renderer alone on http://localhost:5199 (no
+  Electron), using dev-server file endpoints. Load files with
+  `?video=<abs path>&csv=<abs path>&offset=<s>`. `.claude/launch.json` runs
+  it for the built-in browser preview.
+- `npm test`: Vitest (jsdom). Tests import real fixtures from `sample-data/`
+  with Vite `?raw` imports (binary fixtures are base64 `.b64` text).
+  `electron/files.test.ts` runs in node.
 - `npm run typecheck`: `tsc -b` over `tsconfig.app.json` (src) and
-  `tsconfig.node.json` (electron + vite config).
+  `tsconfig.node.json` (electron, dev/, vite config).
 - `npm run lint`: oxlint (also covers `spike/`).
 - `npm run dist`: Windows NSIS installer into `release/`.
 
 ## Layout
 
-- `electron/`: main process (window, `csv:open` IPC) and preload bridge.
-- `src/App.tsx`: placeholder shell until M1 builds the editor.
-- `src/core/`: framework-free logic (no DOM or React, so it can run in
-  workers), unit tested:
+- `electron/`: main process (window, `media://` streaming protocol, file and
+  profile IPC with a picked-files allowlist in `files.ts`) and preload.
+- `dev/fileServer.ts`: dev-only Vite middleware mirroring the file IPC.
+- `src/App.tsx` + `src/app/`: the React UI. `state.ts` (undoable project
+  store + runtime store), `actions.ts`, `host.ts` (Electron vs browser file
+  access), `player.ts` (playback clock), `components/` (Stage, Transport,
+  MediaPanel, InspectorPanel, MappingDialog, ui primitives).
+- `src/core/`: framework-free logic (no React; canvas code is
+  OffscreenCanvas-compatible), unit tested:
   - `data/`: CSV parsing, timestamps and clocks, units, canonical channels,
-    series, logger profiles (`profiles/`), and `import.ts` (CSV →
-    `TelemetrySession`).
+    series, GPS projection, logger profiles (`profiles/`), and `import.ts`
+    (CSV → `TelemetrySession`).
   - `laps/`: lap model from logger markers.
+  - `media/`: MP4 reader, protobuf decoding, camera adapters (`cameras/`,
+    DJI so far), `probeVideo`.
+  - `widgets/`: widget definitions, binding/units (`data.ts`), default
+    layout, and `OverlayRenderer` (cached static layers).
   - `project/`: project schema, save/load validation, Zustand store with
     Immer-patch undo/redo.
 - `sample-data/3.csv`: AiM session (4 laps). `sample-data/solostorm/`: two
   Solostorm single-lap exports that match the DJI videos used in the spikes.
+  `sample-data/media/`: a tiny H.264/AAC MP4 and 240 real DJI `djmd` packets
+  (base64).
 - `spike/`: throwaway benchmarks and sync experiments (CommonJS/ESM scripts,
   not part of the app build).
 
@@ -52,10 +68,24 @@ builds on. The old prototype is at git tag `prototype-v0`.
   stored in them.
 - Every project edit goes through `store.update(label, recipe)` so it is
   undoable; pass a `coalesceKey` for continuous edits like drags.
+- Widgets put everything that doesn't change per frame in `drawStatic`;
+  `drawDynamic` must stay cheap (the full layout is ~0.2 ms per frame).
+- New cameras: add a `CameraAdapter` in `src/core/media/cameras/` and
+  register it in `registry.ts`.
+- Renderer code never touches files directly; go through `FileHost`.
+- UI colours come from the theme tokens in `src/index.css` (`canvas`,
+  `surface`, `raised`, `hover`, `line`, `fg`/`fg-muted`/`fg-subtle`,
+  `accent`, `good`/`warn`/`danger`). Don't use raw Tailwind palette
+  colours. The accent is for primary actions, the playhead, best lap and
+  selection only. Use sentence-case headings, icons from `lucide-react`, and
+  primitives from `src/app/components/ui.tsx`. Overlay widget colours are
+  separate (they're part of the video).
 - Style: single quotes, no semicolons, two-space indent.
 
 ## Status
 
-On branch `redesign`: M0 (foundation) is implemented. Tests, typecheck and
-lint pass. `dist/`, `dist-electron/` and `release/` are build output and are
+On branch `redesign`: M0 (foundation) and M1 (import and preview) are
+implemented. Tests, typecheck, lint and build pass. M1 was verified in the
+browser harness. The Electron window itself hasn't been exercised by an
+automated check yet. `dist/`, `dist-electron/` and `release/` are build output and are
 gitignored.

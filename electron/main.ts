@@ -1,10 +1,22 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { readFile } from 'node:fs/promises'
+import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { allowFile, fileSize, readRanges, serveFile, type ByteRange } from './files.js'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.join(currentDir, '..')
+const profilesPath = () => path.join(app.getPath('userData'), 'logger-profiles.json')
+
+// `media://local/<encoded path>` streams picked files to <video> with ranges.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+])
+
+const FILE_FILTERS = {
+  video: [{ name: 'Videos', extensions: ['mp4', 'mov', 'MP4', 'MOV'] }],
+  csv: [{ name: 'CSV files', extensions: ['csv'] }],
+}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -30,22 +42,43 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('csv:open', async () => {
+  protocol.handle('media', (request) => {
+    const url = new URL(request.url)
+    const filePath = decodeURIComponent(url.pathname.slice(1))
+    return serveFile(filePath, request.headers.get('range'))
+  })
+
+  ipcMain.handle('file:pick', async (_event, kind: keyof typeof FILE_FILTERS) => {
     const result = await dialog.showOpenDialog({
-      title: 'Open telemetry CSV',
-      filters: [{ name: 'CSV files', extensions: ['csv'] }],
+      title: kind === 'video' ? 'Open video' : 'Open telemetry CSV',
+      filters: FILE_FILTERS[kind],
       properties: ['openFile'],
     })
+    const filePath = result.canceled ? null : (result.filePaths[0] ?? null)
+    if (filePath) allowFile(filePath)
+    return filePath
+  })
 
-    if (result.canceled || !result.filePaths[0]) return null
-    const filePath = result.filePaths[0]
+  // Only reachable through the preload's pathForDroppedFile.
+  ipcMain.handle('file:allowDropped', (_event, filePath: string) => allowFile(filePath))
+  ipcMain.handle('file:size', (_event, filePath: string) => fileSize(filePath))
+  ipcMain.handle('file:readRanges', (_event, filePath: string, ranges: ByteRange[]) => readRanges(filePath, ranges))
+  ipcMain.handle('file:readText', async (_event, filePath: string) => {
+    const size = await fileSize(filePath)
+    const [bytes] = await readRanges(filePath, [{ offset: 0, length: size }])
+    return new TextDecoder().decode(bytes)
+  })
 
-    return {
-      path: filePath,
-      name: path.basename(filePath),
-      text: await readFile(filePath, 'utf8'),
+  ipcMain.handle('profiles:load', async () => {
+    try {
+      return JSON.parse(await readFile(profilesPath(), 'utf8')) as unknown
+    } catch {
+      return []
     }
   })
+  ipcMain.handle('profiles:save', (_event, profiles: unknown) =>
+    writeFile(profilesPath(), `${JSON.stringify(profiles, null, 2)}\n`),
+  )
 
   createWindow()
 

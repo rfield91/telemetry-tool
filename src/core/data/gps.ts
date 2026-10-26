@@ -38,6 +38,13 @@ export function projectToLocal(lat: ArrayLike<number>, lon: ArrayLike<number>): 
   return { x, y, refLat, refLon }
 }
 
+/** Project one point with an existing projection's reference. */
+export function localPoint(projection: LocalProjection, lat: number, lon: number): { x: number; y: number } {
+  const metersPerDegLat = (Math.PI / 180) * EARTH_RADIUS_M
+  const metersPerDegLon = metersPerDegLat * Math.cos((projection.refLat * Math.PI) / 180)
+  return { x: (lon - projection.refLon) * metersPerDegLon, y: (lat - projection.refLat) * metersPerDegLat }
+}
+
 export interface BoxFit {
   scale: number
   offsetX: number

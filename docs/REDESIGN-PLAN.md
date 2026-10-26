@@ -165,6 +165,16 @@ channels and laps with tests, and a project round-trips through save/load.
 **Done when** a DJI video and a CSV play together with a hand-entered offset
 and five widgets at 60 fps.
 
+**Status (2026-10-26): done.**
+- The NER DJI video (2.7K60 10-bit HEVC) and the Solostorm lap played
+  together at offset 29.146 s with seven widgets.
+- In steady playback: 300 frames decoded in 5 s with 0 dropped, 58.8 fps
+  presented, and the overlay drew in 0.19 ms per frame on average (0.40 ms
+  max).
+- Verified in the browser harness (`npm run dev:browser`). Electron file
+  access (media:// ranges, IPC) is covered by unit tests but hasn't been
+  exercised in a real Electron window yet.
+
 ### M2 — Auto-sync
 
 - Move the sync engine into a worker with progress reporting.

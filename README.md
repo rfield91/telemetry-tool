@@ -17,14 +17,25 @@ plan. Milestone M0 (foundation) is in place:
 - Lap detection from logger lap markers, with out/in laps and best lap.
 - Project files (save/load with validation) and undo/redo.
 
-There is no editor UI yet; M1 adds video import and preview. The original
-prototype (SVG gauges, transparent WebM export) is at git tag
+Milestone M1 (import and preview) adds:
+
+- Opening MP4/MOV videos of any size (streamed, never loaded whole), with
+  camera detection. DJI Osmo Action files show their model and built-in
+  motion data.
+- A column mapping screen for unknown loggers, saved as reusable profiles.
+- A preview player with an overlay of five widget types (dial gauge, bar,
+  readout, track map, g-meter) redrawn on every video frame, frame
+  stepping, a scrubber with lap markers, and a manual sync offset.
+
+The original prototype (SVG gauges, transparent WebM export) is at git tag
 `prototype-v0`. Measured results behind the redesign are in `spike/`.
 
 ## Commands
 
 - `npm install` installs dependencies.
 - `npm run dev` starts Vite and Electron in development mode.
+- `npm run dev:browser` serves the UI alone at http://localhost:5199 for
+  testing in a browser (development only).
 - `npm run build` type-checks and builds the renderer and Electron processes.
 - `npm test` runs the Vitest suite.
 - `npm run test:watch` runs tests while developing.

@@ -93,6 +93,19 @@ describe('generic import', () => {
     expect(session.channels.find((channel) => channel.key === 'Mystery')?.canonical).toBeNull()
   })
 
+  it('implies units the header leaves out', () => {
+    const session = importTelemetry(
+      't (s),Engine RPM,Lat,Lng,G Lat,Accel Long\n0,900,42.5,-71.6,0.4,-3.1\n1,2000,42.6,-71.7,-1.2,5.2\n',
+      'implied.csv',
+    )
+    expect(session.warnings).toEqual([])
+    expect(findChannel(session, 'rpm')).toMatchObject({ sourceUnit: 'rpm' })
+    expect(findChannel(session, 'latitude')).toMatchObject({ sourceUnit: 'deg' })
+    // |values| < 4 reads as g; larger reads as m/s².
+    expect(findChannel(session, 'lateralAccel')).toMatchObject({ sourceUnit: 'g', unit: 'm/s²' })
+    expect(findChannel(session, 'longitudinalAccel')).toMatchObject({ sourceUnit: 'm/s²' })
+  })
+
   it('warns when a mapped unit does not fit the channel', () => {
     const session = importTelemetry('time,speed (psi)\n0,1\n1,2\n', 'odd.csv')
     expect(findChannel(session, 'speed')).toBeUndefined()
