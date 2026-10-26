@@ -29,8 +29,10 @@ export interface ProjectSync {
   id: string
   videoId: string
   telemetryId: string
-  /** video time = telemetry session time + offsetSeconds */
+  /** video time = offsetSeconds + telemetry session time × (1 + drift) */
   offsetSeconds: number
+  /** Logger clock rate error (e.g. 46e-6 = 46 ppm); absent means 0. */
+  drift?: number
   method: SyncMethod
   /** 0–1, from the sync engine; null for manual. */
   confidence: number | null

@@ -199,6 +199,60 @@ no user input, matching the spike results (29.146 s; lap at 4:14.69). A
 full-session export of SVT Canaan should sync once, with every lap
 selectable.
 
+**Status (2026-10-26): core done; three items open.**
+
+Done:
+- Sync engine in `src/core/sync/`: FFT-based normalised correlation over
+  all lags, peak candidates, the half-split drift check, per-window
+  precision and a confidence level.
+- It runs in a worker. Camera motion comes through the camera adapter, and
+  file reads go over an RPC to `FileHost`.
+- Auto-sync runs on load when the camera has motion data. It is undoable,
+  and never overwrites an offset you changed meanwhile.
+- The Sync panel shows status (match, precision), the data-vs-camera yaw
+  plot around the playhead, nudges, and **Other matches** with Use / Go
+  back.
+- Lap list checkboxes set the export selection.
+- Logger yaw falls back to GPS heading, then GPS course. These are about
+  0.07–0.08 s behind the gyro (GPS latency), and the UI says ±0.1 s.
+
+Verified in the browser harness, with no user input:
+
+| Session | Offset | Spike result | Notes |
+| --- | --- | --- | --- |
+| NER | 29.146 s | 29.146 s | match 0.99, ±6 ms |
+| SVT | 254.693 s | lap at 4:14.69 | picked from 8 similar laps; drift 0.02 s vs 0.41 s for the runner-up |
+
+The same results are pinned in `src/core/sync/sync.test.ts` using camera-yaw
+fixtures extracted from the real videos.
+
+**Full session (2026-10-26).** `svt-canaan-session.csv` (12 laps, 800 s)
+first synced at 127.86 s with match 0.81 and ±242 ms. There were three
+causes:
+- **Interleaved orientation streams.** The DJI file writes other streams
+  2.3–3 rad away from the main one, around dropped-frame stretches (video
+  798–918 s). Read as one stream, they produced ±150 rad/s spikes and
+  wrong-sign turn rates.
+- **Equal weighting.** The engine trusted every window equally.
+- **Clock drift.** The logger clock runs 46 ppm fast relative to the camera,
+  about 37 ms over the session.
+
+Fixes:
+- The DJI decode splits samples into continuity tracks and drops stray ones.
+- The engine ignores gaps (masked FFT correlation) and excludes windows that
+  disagree.
+- Drift is fitted and applied (`sync.drift`).
+
+It now reads match 0.99, 99% coverage, ±34 ms, and places lap 37 at
+254.692 s (single-lap export: 254.693 s).
+
+Open:
+- **Tier 2 image motion** for cameras without motion data. The panel says
+  to set the offset by hand for now.
+- **Lap thumbnails** in the lap list.
+- The AiM `GPS Gyro` sign is still unchecked against video. Correlation
+  ignores sign, so sync doesn't depend on it.
+
 ### M3 — Layout editor
 
 - Direct manipulation on the video stage: drag, resize, snap to edges,

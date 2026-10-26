@@ -12,7 +12,7 @@ function sampleProject(): Project {
     path: 'C:/data/SVT Canaan.csv',
     profileId: 'solostorm',
   })
-  project.syncs.push({ id: 's1', videoId: 'v1', telemetryId: 't1', offsetSeconds: 254.693, method: 'camera-imu', confidence: 0.98 })
+  project.syncs.push({ id: 's1', videoId: 'v1', telemetryId: 't1', offsetSeconds: 127.835, drift: 46e-6, method: 'camera-imu', confidence: 0.95 })
   project.selection = { telemetryId: 't1', laps: [5], leadInSeconds: 2, leadOutSeconds: 2 }
   project.layout.widgets.push({
     id: 'w1',

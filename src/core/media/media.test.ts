@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import djmdBase64 from '../../../sample-data/media/dji-djmd-240.bin.b64?raw'
 import djmdMeta from '../../../sample-data/media/dji-djmd-240.json'
 import tinyBase64 from '../../../sample-data/media/tiny-h264-aac.mp4.b64?raw'
-import { djiActionAdapter, decodeDjmdMotion } from './cameras/dji'
+import { djiActionAdapter, decodeDjmdMotion, gravityYawRate } from './cameras/dji'
 import { memoryFile } from './file'
 import { readMp4, readTrackSamples, trackFrameRate } from './mp4'
 import { probeVideo } from './probe'
@@ -50,6 +50,49 @@ describe('protobuf', () => {
     expect(parseProto(packet)[0]?.field).toBe(3)
     const q = protoFloats(protoPath(packet, [3, 2, 9])!, 4)
     expect(Math.hypot(...q)).toBeCloseTo(1, 4)
+  })
+})
+
+describe('gravityYawRate', () => {
+  type Q = [number, number, number, number]
+  const yaw = (angle: number): Q => [Math.cos(angle / 2), 0, 0, Math.sin(angle / 2)]
+  const mul = ([aw, ax, ay, az]: Q, [bw, bx, by, bz]: Q): Q => [
+    aw * bw - ax * bx - ay * by - az * bz,
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+  ]
+  const fps = 60
+  const rate = 0.5 // rad/s about the vertical axis
+  const times = Array.from({ length: 600 }, (_, i) => i / fps)
+  const up = times.map((): [number, number, number] => [0, 0, 1])
+
+  it('measures a steady turn', () => {
+    const result = gravityYawRate(times, times.map((t) => yaw(rate * t)), up)
+    expect(result.skipped).toBe(0)
+    for (const value of result.yawRate) expect(value).toBeCloseTo(rate, 6)
+  })
+
+  it('drops a stray orientation stream interleaved with the main one', () => {
+    // As in a 16-minute Osmo Action 4 file: bursts of a second stream ~2.6 rad away.
+    const offset: Q = [Math.cos(1.3), 0.6 * Math.sin(1.3), 0, 0.8 * Math.sin(1.3)]
+    const quaternions = times.map((t, i) => {
+      const main = yaw(rate * t)
+      const stray = (i >= 120 && i < 140) || (i >= 300 && i < 303) || (i >= 400 && i < 430)
+      return stray ? mul(main, offset) : main
+    })
+    const result = gravityYawRate(times, quaternions, up)
+    expect(result.skipped).toBe(53)
+    expect(Math.max(...Array.from(result.yawRate, (v) => Math.abs(v - rate)))).toBeLessThan(1e-6)
+  })
+
+  it('keeps the main stream when it resumes after a long gap with a big real turn', () => {
+    // 1 s of dropped frames during which the car turned 1.6 rad.
+    const gapTimes = [...times.slice(0, 60), ...times.slice(60).map((t) => t + 1)]
+    const quaternions = gapTimes.map((t, i) => yaw(rate * t + (i >= 60 ? 1.6 - rate : 0)))
+    const result = gravityYawRate(gapTimes, quaternions, up)
+    expect(result.yawRate.length).toBe(598)
+    expect(Math.max(...Array.from(result.yawRate, (v) => Math.abs(v - rate)))).toBeLessThan(1e-6)
   })
 })
 

@@ -3,20 +3,21 @@ import { useRef, useState, type PointerEvent } from 'react'
 import { bestLap, formatLapTime } from '../../core/laps/laps'
 import { formatClock } from '../format'
 import { player } from '../player'
-import { runtimeStore, useActivePair, useRuntime } from '../state'
+import { runtimeStore, useActivePair, useProject, useRuntime } from '../state'
 import { IconButton } from './ui'
+
+const NO_LAPS: number[] = []
 
 /** Playback controls, timecode and the timeline. */
 export function Transport() {
-  const { video, session, offset } = useActivePair()
+  const { video, session, time: map } = useActivePair()
   const time = useRuntime((s) => s.time)
   const playing = useRuntime((s) => s.playing)
   const showStats = useRuntime((s) => s.showStats)
   const duration = video?.probe.duration ?? session?.duration ?? 0
   const fps = video?.probe.video.fps ?? 30
   const disabled = duration <= 0
-  const shift = video ? offset : 0
-  const dataTime = time - shift
+  const dataTime = map.toData(time)
 
   return (
     <div className="flex h-16 shrink-0 items-center gap-4 border-t border-line bg-surface px-4">
@@ -44,7 +45,7 @@ export function Transport() {
         </div>
       </div>
 
-      <Timeline duration={duration} time={time} shift={shift} disabled={disabled} />
+      <Timeline duration={duration} time={time} disabled={disabled} />
 
       <div className="w-28 shrink-0 text-right leading-tight">
         <div className="text-[11px] text-fg-subtle">Data time</div>
@@ -62,11 +63,12 @@ export function Transport() {
   )
 }
 
-function Timeline({ duration, time, shift, disabled }: { duration: number; time: number; shift: number; disabled: boolean }) {
-  const { session } = useActivePair()
+function Timeline({ duration, time, disabled }: { duration: number; time: number; disabled: boolean }) {
+  const { session, time: map } = useActivePair()
   const trackRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<number | null>(null)
   const best = session ? bestLap(session.laps) : null
+  const selected = useProject((s) => s.project.selection?.laps ?? NO_LAPS)
 
   const timeAt = (clientX: number) => {
     const rect = trackRef.current!.getBoundingClientRect()
@@ -100,11 +102,11 @@ function Timeline({ duration, time, shift, disabled }: { duration: number; time:
       onPointerMove={onPointerMove}
       onPointerLeave={() => setHover(null)}
     >
-      {/* Lap bands, placed on the video timeline through the offset. */}
+      {/* Lap bands, placed on the video timeline through the sync. */}
       {duration > 0 &&
         session?.laps.map((lap) => {
-          const start = lap.start + shift
-          const end = lap.end + shift
+          const start = map.toVideo(lap.start)
+          const end = map.toVideo(lap.end)
           if (end < 0 || start > duration) return null
           const isBest = lap === best
           return (
@@ -113,7 +115,7 @@ function Timeline({ duration, time, shift, disabled }: { duration: number; time:
               title={`${lap.kind === 'timed' ? `Lap ${lap.loggerNumber ?? lap.index}` : lap.kind === 'out' ? 'Out lap' : 'In lap'} · ${formatLapTime(lap.duration)}`}
               className={`absolute top-1 h-3.5 overflow-hidden rounded-sm border-l px-1 text-[10px] leading-3.5 ${
                 isBest ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-white/[0.04] text-fg-subtle'
-              }`}
+              } ${selected.includes(lap.index) ? 'ring-1 ring-fg-muted ring-inset' : ''}`}
               style={{ left: percent(start), width: `calc(${percent(end)} - ${percent(start)})` }}
             >
               {lap.kind === 'timed' ? `L${lap.loggerNumber ?? lap.index}` : lap.kind}

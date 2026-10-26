@@ -1,9 +1,12 @@
+import { useMemo } from 'react'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import type { TelemetrySession } from '../core/data/import'
 import { ProfileRegistry } from '../core/data/profiles/registry'
 import type { VideoProbe } from '../core/media/probe'
 import { createProjectStore, type ProjectState } from '../core/project/store'
+import type { Series } from '../core/data/series'
+import type { SyncRunOutput } from './sync/protocol'
 
 /** The undoable project document (files, sync offset, layout). */
 export const projectStore = createProjectStore()
@@ -34,7 +37,22 @@ export interface RuntimeState {
   playing: boolean
   /** Performance readout on the viewer. */
   showStats: boolean
+  /** Latest auto-sync run for the active video/data pair. */
+  syncRun: SyncRun
 }
+
+export type SyncRun =
+  | { status: 'idle' }
+  | { status: 'running'; label: string }
+  | { status: 'error'; message: string }
+  | {
+      status: 'done'
+      output: SyncRunOutput
+      /** Logger signal used (for the comparison plot) and where it came from. */
+      logger: Series
+      loggerSource: string
+      gpsDerived: boolean
+    }
 
 export const runtimeStore = createStore<RuntimeState>()(() => ({
   videos: {},
@@ -47,20 +65,43 @@ export const runtimeStore = createStore<RuntimeState>()(() => ({
   time: 0,
   playing: false,
   showStats: false,
+  syncRun: { status: 'idle' },
 }))
 
 export function useRuntime<T>(selector: (state: RuntimeState) => T): T {
   return useStore(runtimeStore, selector)
 }
 
-/** The single video/telemetry pair the M1 preview works with. */
+/**
+ * Video ↔ data time for a sync: video = offset + data × (1 + drift).
+ * Without a video, data time is the playback time.
+ */
+export interface TimeMap {
+  offset: number
+  drift: number
+  toData(videoTime: number): number
+  toVideo(dataTime: number): number
+}
+
+export function timeMap(offset: number, drift: number, hasVideo: boolean): TimeMap {
+  if (!hasVideo) return { offset: 0, drift: 0, toData: (t) => t, toVideo: (t) => t }
+  return {
+    offset,
+    drift,
+    toData: (videoTime) => (videoTime - offset) / (1 + drift),
+    toVideo: (dataTime) => offset + dataTime * (1 + drift),
+  }
+}
+
+/** The single video/telemetry pair the preview works with. */
 export function useActivePair() {
   const videoId = useProject((s) => s.project.videos[0]?.id ?? null)
   const telemetryId = useProject((s) => s.project.telemetry[0]?.id ?? null)
   const video = useRuntime((s) => (videoId ? s.videos[videoId] : undefined))
   const session = useRuntime((s) => (telemetryId ? s.sessions[telemetryId] : undefined))
-  const offset = useProject(
-    (s) => s.project.syncs.find((sync) => sync.videoId === videoId && sync.telemetryId === telemetryId)?.offsetSeconds ?? 0,
-  )
-  return { videoId, telemetryId, video, session, offset }
+  const sync = useProject((s) => s.project.syncs.find((entry) => entry.videoId === videoId && entry.telemetryId === telemetryId))
+  const offset = sync?.offsetSeconds ?? 0
+  const drift = sync?.drift ?? 0
+  const time = useMemo(() => timeMap(offset, drift, !!video), [offset, drift, video])
+  return { videoId, telemetryId, video, session, offset, drift, time }
 }

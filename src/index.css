@@ -25,6 +25,9 @@
   --color-accent-fg: #1a1206;
   --color-accent-soft: rgb(245 158 66 / 0.14);
 
+  /* Secondary data series in plots (the camera signal in the sync plot). */
+  --color-info: #7cc4fa;
+
   --color-good: #4ade80;
   --color-warn: #fbbf24;
   --color-danger: #f87171;

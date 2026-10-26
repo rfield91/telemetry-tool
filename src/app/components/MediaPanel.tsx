@@ -1,8 +1,8 @@
 import { Film, RefreshCw, SlidersHorizontal, Table2, TriangleAlert, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { CANONICAL_CHANNELS } from '../../core/data/channels'
-import { bestLap, formatLapTime, lapAt } from '../../core/laps/laps'
-import { openTelemetry, openVideo } from '../actions'
+import { bestLap, formatLapTime, lapAt, type Lap } from '../../core/laps/laps'
+import { openTelemetry, openVideo, toggleLapSelection } from '../actions'
 import { formatBytes, formatClock, formatFps } from '../format'
 import { player } from '../player'
 import { runtimeStore, useActivePair, useProject, useRuntime } from '../state'
@@ -165,42 +165,60 @@ function DataSource() {
 }
 
 function LapList() {
-  const { session, video, offset } = useActivePair()
+  const { session, time: map } = useActivePair()
   const time = useRuntime((s) => s.time)
+  const selection = useProject((s) => s.project.selection)
   if (!session) return <p className="text-xs text-fg-subtle">Laps appear here once data is added.</p>
   if (session.laps.length === 0) {
     return <p className="text-xs text-fg-subtle">This data file has no lap markers.</p>
   }
-  const shift = video ? offset : 0
   const best = bestLap(session.laps)
-  const current = lapAt(session.laps, time - shift)
+  const current = lapAt(session.laps, map.toData(time))
+  const selected = selection?.laps ?? []
+  const lapName = (lap: Lap) => (lap.kind === 'timed' ? `Lap ${lap.loggerNumber ?? lap.index}` : lap.kind === 'out' ? 'Out lap' : 'In lap')
   return (
-    <ol className="-mx-2 space-y-px">
-      {session.laps.map((lap) => {
-        const isBest = lap === best
-        const gap = best && lap.kind === 'timed' && !isBest ? `+${(lap.duration - best.duration).toFixed(3)}` : ''
-        return (
-          <li key={lap.index}>
-            <button
-              type="button"
-              title="Jump to the start of this lap"
-              onClick={() => player.seek(lap.start + shift)}
-              className={`grid w-full grid-cols-[3.5rem_1fr_auto] items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover ${
-                lap === current ? 'bg-raised' : ''
-              }`}
-            >
-              <span className="flex items-center gap-1.5 text-fg-muted">
-                {lap === current && <span className="size-1.5 rounded-full bg-accent" aria-label="Current lap" />}
-                {lap.kind === 'timed' ? `Lap ${lap.loggerNumber ?? lap.index}` : lap.kind === 'out' ? 'Out' : 'In'}
-              </span>
-              <span className={`text-right font-mono text-[13px] tabular ${isBest ? 'text-accent' : lap.kind === 'timed' ? 'text-fg' : 'text-fg-subtle'}`}>
-                {formatLapTime(lap.duration)}
-              </span>
-              <span className="w-14 text-right font-mono text-xs tabular text-fg-subtle">{isBest ? 'best' : gap}</span>
-            </button>
-          </li>
-        )
-      })}
-    </ol>
+    <>
+      <ol className="-mx-2 space-y-px">
+        {session.laps.map((lap) => {
+          const isBest = lap === best
+          const gap = best && lap.kind === 'timed' && !isBest ? `+${(lap.duration - best.duration).toFixed(3)}` : ''
+          return (
+            <li key={lap.index} className={`flex items-center rounded-md pl-2 transition-colors hover:bg-hover ${lap === current ? 'bg-raised' : ''}`}>
+              <input
+                type="checkbox"
+                className="size-3.5 shrink-0 accent-[var(--color-accent)]"
+                checked={selected.includes(lap.index)}
+                onChange={() => toggleLapSelection(lap.index)}
+                aria-label={`Export ${lapName(lap)}`}
+                title="Include in export"
+              />
+              <button
+                type="button"
+                title="Jump to the start of this lap"
+                onClick={() => player.seek(map.toVideo(lap.start))}
+                className="grid min-w-0 flex-1 grid-cols-[4rem_1fr_auto] items-baseline gap-2 py-1.5 pr-2 pl-2 text-left"
+              >
+                <span className="flex items-center gap-1.5 text-fg-muted">
+                  {lap === current && <span className="size-1.5 rounded-full bg-accent" aria-label="Current lap" />}
+                  {lap.kind === 'timed' ? `Lap ${lap.loggerNumber ?? lap.index}` : lap.kind === 'out' ? 'Out' : 'In'}
+                </span>
+                <span className={`text-right font-mono text-[13px] tabular ${isBest ? 'text-accent' : lap.kind === 'timed' ? 'text-fg' : 'text-fg-subtle'}`}>
+                  {formatLapTime(lap.duration)}
+                </span>
+                <span className="w-14 text-right font-mono text-xs tabular text-fg-subtle">{isBest ? 'best' : gap}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+      <p className="mt-3 text-xs leading-relaxed text-fg-subtle">
+        {selected.length === 0
+          ? 'Export: whole video. Tick laps to export just those.'
+          : `Export: ${session.laps
+              .filter((lap) => selected.includes(lap.index))
+              .map(lapName)
+              .join(', ')}, with ${selection!.leadInSeconds} s before and after.`}
+      </p>
+    </>
   )
 }

@@ -56,6 +56,7 @@ export function parseProject(text: string): Project {
   checkArray(data.syncs, 'syncs', (sync, at) => {
     check(isString(sync.id) && isString(sync.videoId) && isString(sync.telemetryId), `${at} needs ids`)
     check(isFiniteNumber(sync.offsetSeconds), `${at} needs an offset`)
+    check(sync.drift === undefined || (isFiniteNumber(sync.drift) && Math.abs(sync.drift) < 0.01), `${at} has an invalid drift`)
     check(['camera-imu', 'image-motion', 'manual'].includes(sync.method as string), `${at} has an unknown method`)
     check(sync.confidence === null || isFiniteNumber(sync.confidence), `${at} has an invalid confidence`)
   })

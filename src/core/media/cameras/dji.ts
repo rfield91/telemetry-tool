@@ -24,39 +24,96 @@ function djmdTrack(info: Mp4Info) {
 
 type Quaternion = [number, number, number, number]
 
+/** Fastest rotation a car-mounted camera plausibly makes (≈ 340°/s). */
+const MAX_RATE = 6
+/** Allowance for sensor noise on top of MAX_RATE · dt (rad). */
+const ANGLE_SLACK = 0.05
 /**
- * Rotation rate between consecutive orientations, projected onto the
+ * Largest plausible change across any gap (rad). Cameras drop frames (gaps
+ * of up to ~1 s), and without a cap MAX_RATE · dt would accept anything
+ * after a gap. The second stream sits 2.3–3 rad away from the first.
+ */
+const MAX_JUMP = 1.5
+
+/** Body-frame relative rotation conj(q1) · q2, in the short-way hemisphere. */
+function relativeRotation([w1, x1, y1, z1]: Quaternion, [w2, x2, y2, z2]: Quaternion): Quaternion {
+  const d: Quaternion = [
+    w1 * w2 + x1 * x2 + y1 * y2 + z1 * z2,
+    w1 * x2 - x1 * w2 - y1 * z2 + z1 * y2,
+    w1 * y2 + x1 * z2 - y1 * w2 - z1 * x2,
+    w1 * z2 - x1 * y2 + y1 * x2 - z1 * w2,
+  ]
+  return d[0] < 0 ? [-d[0], -d[1], -d[2], -d[3]] : d
+}
+
+/**
+ * Rotation rate between successive orientations, projected onto the
  * gravity direction (mean accelerometer vector) so mounting angle doesn't
  * matter.
+ *
+ * Some recordings interleave other orientation streams, 2.3–3 rad away from
+ * the main one (seen in a 16-minute Osmo Action 4 file around stretches of
+ * dropped frames). Their turn rates are inconsistent with the vehicle (often
+ * the wrong sign), and comparing neighbours across a switch reads as a
+ * ~150 rad/s spin. So samples are split into tracks by continuity (each
+ * sample joins the track it can be reached from with a plausible rotation),
+ * rates are measured within each track, and stray tracks are dropped.
  */
 export function gravityYawRate(
   times: ArrayLike<number>,
   quaternions: Quaternion[],
   accels: Array<[number, number, number]>,
-): { times: Float64Array; yawRate: Float64Array } {
+): { times: Float64Array; yawRate: Float64Array; skipped: number } {
   const up = [0, 1, 2].map((i) => accels.reduce((sum, a) => sum + a[i]!, 0) / Math.max(accels.length, 1))
   const norm = Math.hypot(up[0]!, up[1]!, up[2]!) || 1
-  const n = Math.max(quaternions.length - 1, 0)
-  const outTimes = new Float64Array(n)
-  const yawRate = new Float64Array(n)
-  for (let i = 1; i < quaternions.length; i += 1) {
-    const [w1, x1, y1, z1] = quaternions[i - 1]!
-    const [w2, x2, y2, z2] = quaternions[i]!
-    // Body-frame relative rotation conj(q1) * q2.
-    let d = [
-      w1 * w2 + x1 * x2 + y1 * y2 + z1 * z2,
-      w1 * x2 - x1 * w2 - y1 * z2 + z1 * y2,
-      w1 * y2 + x1 * z2 - y1 * w2 - z1 * x2,
-      w1 * z2 - x1 * y2 + y1 * x2 - z1 * w2,
-    ]
-    if (d[0]! < 0) d = d.map((v) => -v)
-    const dt = times[i]! - times[i - 1]!
-    const s = Math.hypot(d[1]!, d[2]!, d[3]!)
-    const k = s > 0 && dt > 0 ? (2 * Math.atan2(s, d[0]!)) / s / dt : 0
-    outTimes[i - 1] = (times[i]! + times[i - 1]!) / 2
-    yawRate[i - 1] = ((d[1]! * up[0]! + d[2]! * up[1]! + d[3]! * up[2]!) / norm) * k
+
+  interface Track {
+    first: number
+    last: number
+    samples: number
+    times: number[]
+    rates: number[]
   }
-  return { times: outTimes, yawRate }
+  const tracks: Track[] = []
+  for (let i = 0; i < quaternions.length; i += 1) {
+    let best: { track: Track; angle: number; d: Quaternion } | null = null
+    for (const track of tracks) {
+      const dt = times[i]! - times[track.last]!
+      if (!(dt > 0)) continue
+      const d = relativeRotation(quaternions[track.last]!, quaternions[i]!)
+      const angle = 2 * Math.atan2(Math.hypot(d[1], d[2], d[3]), d[0])
+      if (angle <= Math.min(MAX_RATE * dt + ANGLE_SLACK, MAX_JUMP) && (!best || angle < best.angle)) {
+        best = { track, angle, d }
+      }
+    }
+    if (!best) {
+      tracks.push({ first: i, last: i, samples: 1, times: [], rates: [] })
+      continue
+    }
+    const { track, angle, d } = best
+    const dt = times[i]! - times[track.last]!
+    const s = Math.hypot(d[1], d[2], d[3])
+    const k = s > 0 ? angle / s / dt : 0
+    track.times.push((times[i]! + times[track.last]!) / 2)
+    track.rates.push(((d[1] * up[0]! + d[2] * up[1]! + d[3] * up[2]!) / norm) * k)
+    track.last = i
+    track.samples += 1
+  }
+
+  // Keep tracks that don't overlap in time with a larger one: the main
+  // stream and its continuations after gaps. Overlapping stray tracks are
+  // dropped, which can leave holes; the sync engine treats holes as missing
+  // data rather than interpolating across them.
+  const overlaps = (a: Track, b: Track) => times[a.first]! < times[b.last]! && times[b.first]! < times[a.last]!
+  const kept = tracks.filter((track) => !tracks.some((other) => other.samples > track.samples && overlaps(track, other)))
+  const merged = kept
+    .flatMap((track) => track.times.map((t, k) => [t, track.rates[k]!] as const))
+    .sort((a, b) => a[0] - b[0])
+  return {
+    times: Float64Array.from(merged, ([t]) => t),
+    yawRate: Float64Array.from(merged, ([, rate]) => rate),
+    skipped: quaternions.length - kept.reduce((sum, track) => sum + track.samples, 0),
+  }
 }
 
 /** Decode orientation + acceleration from djmd packets and derive yaw rate. */
@@ -81,7 +138,8 @@ export function decodeDjmdMotion(times: ArrayLike<number>, packets: Uint8Array[]
     }
   })
   if (quaternions.length < 2) return null
-  return { ...gravityYawRate(sampleTimes, quaternions, accels), source: 'DJI djmd orientation' }
+  const { times: rateTimes, yawRate } = gravityYawRate(sampleTimes, quaternions, accels)
+  return { times: rateTimes, yawRate, source: 'DJI djmd orientation' }
 }
 
 export const djiActionAdapter: CameraAdapter = {

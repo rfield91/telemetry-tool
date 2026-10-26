@@ -63,8 +63,32 @@ GPS start/finish-line detection is planned, not built.
 | `file.ts` | `RandomAccessFile`: size + batched `readRanges`, so thousands of small metadata samples cost one host round trip. |
 | `mp4.ts` | Minimal ISO-BMFF reader: finds `moov` by walking box headers (works with moov-at-end 9 GB files), reads tracks (handler, sample-entry four-cc, size, rotation) and sample tables (offsets, sizes, times). |
 | `protobuf.ts` | Schema-less protobuf decoding for camera metadata. |
-| `cameras/` | `CameraAdapter` registry. `dji.ts` detects the `djmd` track, reads the model (`DJI AC003` → Osmo Action 4), and turns per-frame orientation quaternions into gravity-projected yaw rate. GoPro (GPMF) is planned for M5. |
+| `cameras/` | `CameraAdapter` registry. `dji.ts` detects the `djmd` track, reads the model (`DJI AC003` → Osmo Action 4), and turns per-frame orientation quaternions into gravity-projected yaw rate. Some recordings interleave stray orientation streams (2.3–3 rad away, wrong-sign turn rates) around dropped frames. Samples are therefore split into continuity tracks (a jump is capped at 1.5 rad even across gaps), rates are measured within each track, and tracks that overlap a larger one are dropped. GoPro (GPMF) is planned for M5. |
 | `probe.ts` | `probeVideo`: codec, size, fps, frame count, audio, camera, and whether motion data is available. Picks the longest visual track (DJI adds an MJPEG thumbnail track). |
+
+## Sync (`src/core/sync/`, `src/app/sync/`)
+
+Sync is defined as **video time = offset + logger time × (1 + drift)**. The
+app converts through `timeMap` / `useActivePair().time` (`toData`,
+`toVideo`); never add or subtract the offset directly.
+
+| File | Responsibility |
+| --- | --- |
+| `fft.ts` | Radix-2 FFT, cross-correlation, and `maskedLagSums` (the six lag sums for a Pearson r that ignores missing samples). |
+| `engine.ts` | `synchronize(logger, camera)`, in steps:<br>1. Resample both to 50 Hz, marking gaps over 0.5 s as missing (NaN), and clip spikes.<br>2. Masked Pearson r at every lag in one FFT pass.<br>3. Peak candidates of the dominant sign, refined to sub-sample, with the half-split drift check when peaks are close (laps of the same track).<br>4. Robust pass: drop 5 s windows that disagree at the chosen offset, and refine on the rest (`coverage`).<br>5. Line fit of 10 s window offsets: clock `drift` (recordings of at least 120 s) and `precision` (scatter around the line).<br>6. Confidence from strength, separation and coverage. |
+| `yaw.ts` | `loggerYaw(session)`: the gyro yaw channel, else the rate of GPS heading, else the GPS course over 2 m steps. GPS-derived signals are flagged (about 0.08 s of latency). |
+
+In the app:
+- `app/sync/worker.ts` runs `readMp4` → camera adapter `readMotion` →
+  `synchronize` off the UI thread.
+- The worker's file reads are answered by `app/sync/client.ts` through
+  `FileHost`.
+- The worker is bundled inline (`?worker&inline`), so it works when the
+  app loads from `file://`.
+- `actions.autoSync` applies the result as an undoable edit (method
+  `camera-imu`).
+- `runtimeStore.syncRun` keeps the candidates and both signals for the
+  Sync panel and its plot.
 
 ## Widgets (`src/core/widgets/`)
 

@@ -1,0 +1,8 @@
+{
+  "source": "DJI_20261024145651_0016_D.MP4 (DJI Osmo Action 4): djmd gravity-projected yaw rate via djiActionAdapter",
+  "hz": 50,
+  "scale": 10000,
+  "unit": "rad/s",
+  "missing": -32768,
+  "samples": 45945
+}

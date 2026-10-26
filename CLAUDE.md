@@ -31,7 +31,8 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - `dev/fileServer.ts`: dev-only Vite middleware mirroring the file IPC.
 - `src/App.tsx` + `src/app/`: the React UI. `state.ts` (undoable project
   store + runtime store), `actions.ts`, `host.ts` (Electron vs browser file
-  access), `player.ts` (playback clock), `components/` (Stage, Transport,
+  access), `player.ts` (playback clock), `sync/` (worker + client),
+  `components/` (Stage, Transport,
   MediaPanel, InspectorPanel, MappingDialog, ui primitives).
 - `src/core/`: framework-free logic (no React; canvas code is
   OffscreenCanvas-compatible), unit tested:
@@ -41,14 +42,18 @@ builds on. The old prototype is at git tag `prototype-v0`.
   - `laps/`: lap model from logger markers.
   - `media/`: MP4 reader, protobuf decoding, camera adapters (`cameras/`,
     DJI so far), `probeVideo`.
+  - `sync/`: auto-sync engine (FFT correlation, lap candidates, half-split
+    drift check, confidence) and logger yaw extraction with GPS fallbacks.
   - `widgets/`: widget definitions, binding/units (`data.ts`), default
     layout, and `OverlayRenderer` (cached static layers).
   - `project/`: project schema, save/load validation, Zustand store with
     Immer-patch undo/redo.
 - `sample-data/3.csv`: AiM session (4 laps). `sample-data/solostorm/`: two
   Solostorm single-lap exports that match the DJI videos used in the spikes.
-  `sample-data/media/`: a tiny H.264/AAC MP4 and 240 real DJI `djmd` packets
-  (base64).
+  `svt-canaan-session.csv` is the full 12-lap session trimmed to the columns
+  sync and laps use. `sample-data/media/`: a tiny H.264/AAC MP4 and 240 real DJI `djmd` packets
+  (base64). `sample-data/sync/`: camera yaw (50 Hz, int16) extracted from the
+  NER and SVT DJI videos, pinning the auto-sync results in tests.
 - `spike/`: throwaway benchmarks and sync experiments (CommonJS/ESM scripts,
   not part of the app build).
 
@@ -73,6 +78,9 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - New cameras: add a `CameraAdapter` in `src/core/media/cameras/` and
   register it in `registry.ts`.
 - Renderer code never touches files directly; go through `FileHost`.
+- Video ↔ data time always goes through the sync's time map
+  (`useActivePair().time.toData/toVideo`); syncs include clock `drift`, so
+  never add or subtract the offset by hand.
 - UI colours come from the theme tokens in `src/index.css` (`canvas`,
   `surface`, `raised`, `hover`, `line`, `fg`/`fg-muted`/`fg-subtle`,
   `accent`, `good`/`warn`/`danger`). Don't use raw Tailwind palette
@@ -85,7 +93,8 @@ builds on. The old prototype is at git tag `prototype-v0`.
 ## Status
 
 On branch `redesign`: M0 (foundation) and M1 (import and preview) are
-implemented. Tests, typecheck, lint and build pass. M1 was verified in the
+implemented, and M2 (auto-sync) is done except image-motion sync and lap
+thumbnails. Tests, typecheck, lint and build pass. M1 was verified in the
 browser harness. The Electron window itself hasn't been exercised by an
 automated check yet. `dist/`, `dist-electron/` and `release/` are build output and are
 gitignored.

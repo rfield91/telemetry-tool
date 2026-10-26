@@ -20,7 +20,7 @@ const TIME_PUBLISH_MS = 100
  * using that frame's exact media time.
  */
 export function Stage() {
-  const { video, session, offset } = useActivePair()
+  const { video, session, time } = useActivePair()
   const showPerf = useRuntime((s) => s.showStats)
   const widgets = useProject((s) => s.project.layout.widgets)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -34,8 +34,8 @@ export function Stage() {
   const aspect = video ? video.probe.video.width / video.probe.video.height : 16 / 9
 
   // Latest values for the frame loop, without restarting it on every change.
-  const latest = useRef({ widgets, session, offset })
-  latest.current = { widgets, session, offset }
+  const latest = useRef({ widgets, session, time })
+  latest.current = { widgets, session, time }
   const stats = useRef({ drawTotal: 0, drawMax: 0, draws: 0, frames: 0, since: performance.now(), lastPublish: 0 })
 
   useLayoutEffect(() => {
@@ -63,8 +63,8 @@ export function Stage() {
     const ctx = canvas.getContext('2d')
     if (!ctx || width === 0) return
     ctx.clearRect(0, 0, width, height)
-    const { widgets: current, session: currentSession, offset: currentOffset } = latest.current
-    rendererRef.current.render(ctx, { width, height }, current, currentSession ?? null, videoTime - currentOffset)
+    const { widgets: current, session: currentSession, time: map } = latest.current
+    rendererRef.current.render(ctx, { width, height }, current, currentSession ?? null, map.toData(videoTime))
 
     const s = stats.current
     s.drawTotal += rendererRef.current.lastFrameMs
@@ -113,7 +113,7 @@ export function Stage() {
   // Redraw on anything else that changes the picture while paused.
   useEffect(() => {
     drawRef.current(player.time)
-  }, [widgets, session, offset, box])
+  }, [widgets, session, time, box])
 
   // Performance readout, twice a second.
   useEffect(() => {

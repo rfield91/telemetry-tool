@@ -46,7 +46,13 @@ function browserHost(): FileHost {
     kind: 'browser',
     // Dev harness only: there is no native file dialog in a plain browser.
     async pickFile(kind) {
-      const path = window.prompt(kind === 'video' ? 'Absolute path to a video file' : 'Absolute path to a CSV file')
+      let path: string | null
+      try {
+        path = window.prompt(kind === 'video' ? 'Absolute path to a video file' : 'Absolute path to a CSV file')
+      } catch {
+        // Some embedded browsers block prompt().
+        throw new Error('Open files with ?video=<path>&csv=<path> in the browser harness, or use the desktop app.')
+      }
       return path?.trim().replace(/^"|"$/g, '') || null
     },
     // Browsers don't expose file paths for dropped files.
