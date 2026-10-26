@@ -1,36 +1,29 @@
 # Telemetry Overlay
 
-An Electron desktop utility for turning timestamped CSV logger data into a
-transparent gauge video. The same React component powers both the live preview
-and deterministic frame-by-frame export.
+A Windows desktop app for racing drivers: import in-car video and data-logger
+CSVs, sync them automatically, design an overlay of gauges and maps, and
+export a finished video.
 
-## Current MVP
+## Status
 
-- Import a CSV and select timestamp and numeric value columns.
-- Auto-detect **AiM** vs **Generic CSV** (with a manual format override).
-- Interpret timestamps as seconds, milliseconds, microseconds, or auto-detect.
-- Configure overlays: dial gauges, pedal bars, key-value readouts, a GPS track
-  map, and a g-meter (friction circle).
-- Apply bundled layout presets; AiM files get a default race layout (speed,
-  TPS, oil/coolant, track map, g-meter).
-- Preview interpolated telemetry with play and scrub controls.
-- Trim the timeline in/out points to export only a subset of the session.
-- Export VP9 WebM at 24, 30, or 60 fps with an alpha channel.
+Being rebuilt. See [docs/REDESIGN-PLAN.md](docs/REDESIGN-PLAN.md) for the
+plan. Milestone M0 (foundation) is in place:
 
-CSV files must have a header row. Invalid samples are skipped and reported. The
-first valid timestamp becomes `0:00`, and values between samples are linearly
-interpolated.
+- Telemetry import for **Solostorm** and **AiM Race Studio**, plus a generic
+  importer that guesses columns and units for other loggers. Confirmed
+  mappings can be saved as reusable profiles.
+- Logger-independent channels (speed, yaw rate, g-forces, GPS, engine…)
+  converted to consistent units.
+- Lap detection from logger lap markers, with out/in laps and best lap.
+- Project files (save/load with validation) and undo/redo.
 
-Supported import formats today are AiM Race Studio exports and plain
-header+rows CSVs. Detection lives in `src/renderer/lib/csvFormats.ts` — add
-another profile there to support a new logger.
-
-The exported WebM is intended for compositing in editors that support VP9
-alpha. It contains no background and no audio.
+There is no editor UI yet; M1 adds video import and preview. The original
+prototype (SVG gauges, transparent WebM export) is at git tag
+`prototype-v0`. Measured results behind the redesign are in `spike/`.
 
 ## Commands
 
-- `npm install` installs the application and bundled media tools.
+- `npm install` installs dependencies.
 - `npm run dev` starts Vite and Electron in development mode.
 - `npm run build` type-checks and builds the renderer and Electron processes.
 - `npm test` runs the Vitest suite.
@@ -41,13 +34,4 @@ alpha. It contains no background and no audio.
 
 ## Architecture
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design. A
-redesign is planned in [docs/REDESIGN-PLAN.md](docs/REDESIGN-PLAN.md).
-
-- `electron/` owns native file dialogs, the secure preload bridge, and FFmpeg.
-- `src/renderer/lib/telemetry.ts` parses, validates, and samples logger data.
-- `src/renderer/lib/csvFormats.ts` detects CSV logger format and holds profiles.
-- `src/renderer/components/Gauge.tsx` is the reusable SVG dial gauge.
-- `src/renderer/components/TrackMap.tsx` draws the GPS track and live marker.
-- `src/renderer/export/OverlayFrame.tsx` renders an explicit point in time on a
-  transparent canvas.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

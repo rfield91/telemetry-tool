@@ -51,7 +51,8 @@ async function probeFps(file) {
     ff.stderr.on('data', (d) => (err += d))
     ff.on('close', () => {
       const m = err.match(/Video: .*?(\d+(?:\.\d+)?) fps/)
-      m ? resolve(Number(m[1])) : reject(new Error('Could not read fps'))
+      if (m) resolve(Number(m[1]))
+      else reject(new Error('Could not read fps'))
     })
   })
 }

@@ -2,11 +2,6 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  cancelExport,
-  exportOverlayVideo,
-  type ExportVideoRequest,
-} from './exportVideo.js'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.join(currentDir, '..')
@@ -46,35 +41,10 @@ app.whenReady().then(() => {
     const filePath = result.filePaths[0]
 
     return {
+      path: filePath,
       name: path.basename(filePath),
       text: await readFile(filePath, 'utf8'),
     }
-  })
-
-  ipcMain.handle(
-    'export:choose-path',
-    async (_event, suggestedName: string) => {
-      const result = await dialog.showSaveDialog({
-        title: 'Export transparent overlay',
-        defaultPath: suggestedName,
-        filters: [{ name: 'WebM video', extensions: ['webm'] }],
-      })
-      return result.canceled ? null : result.filePath
-    },
-  )
-
-  ipcMain.handle(
-    'export:start',
-    async (event, request: ExportVideoRequest) =>
-      exportOverlayVideo(request, (progress) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('export:progress', progress)
-        }
-      }),
-  )
-
-  ipcMain.handle('export:cancel', (_event, exportId: string) => {
-    cancelExport(exportId)
   })
 
   createWindow()
