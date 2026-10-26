@@ -19,6 +19,13 @@ export const barWidget: WidgetDefinition<BarStyle> = {
   label: 'Bar',
   inputs: [{ name: 'value', label: 'Value', channel: 'throttle' }],
   aspect: 0.38,
+  styleFields: [
+    { key: 'label', label: 'Label', kind: 'text' },
+    { key: 'accent', label: 'Colour', kind: 'color' },
+    { key: 'min', label: 'Minimum', kind: 'number' },
+    { key: 'max', label: 'Maximum', kind: 'number' },
+    { key: 'decimals', label: 'Decimals', kind: 'number', min: 0, max: 3, step: 1 },
+  ],
   defaultStyle() {
     return { label: 'THROTTLE', min: 0, max: 100, accent: '#22c55e', decimals: 0 }
   },

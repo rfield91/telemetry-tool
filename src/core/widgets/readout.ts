@@ -16,6 +16,11 @@ export const readoutWidget: WidgetDefinition<ReadoutStyle> = {
   label: 'Readout',
   inputs: [{ name: 'value', label: 'Value', channel: 'coolantTemp' }],
   aspect: 2.4,
+  styleFields: [
+    { key: 'label', label: 'Label', kind: 'text' },
+    { key: 'accent', label: 'Colour', kind: 'color' },
+    { key: 'decimals', label: 'Decimals', kind: 'number', min: 0, max: 3, step: 1 },
+  ],
   defaultStyle() {
     return { label: 'VALUE', accent: '#fbbf24', decimals: 0 }
   },

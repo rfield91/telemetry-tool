@@ -25,6 +25,13 @@ export const gMeterWidget: WidgetDefinition<GMeterStyle> = {
     { name: 'longitudinal', label: 'Longitudinal g', channel: 'longitudinalAccel' },
   ],
   aspect: 1,
+  styleFields: [
+    { key: 'accent', label: 'Colour', kind: 'color' },
+    { key: 'maxG', label: 'Range (g)', kind: 'number', min: 0.5, max: 5, step: 0.5 },
+    { key: 'trailSeconds', label: 'Trail (s)', kind: 'number', min: 0, max: 5, step: 0.5 },
+    { key: 'invertLateral', label: 'Flip left/right', kind: 'toggle' },
+    { key: 'invertLongitudinal', label: 'Flip braking/accel', kind: 'toggle' },
+  ],
   defaultStyle(data) {
     let peak = 0
     for (const input of ['lateral', 'longitudinal']) {

@@ -267,6 +267,41 @@ Open:
 **Done when** a user can build the AiM-default layout from scratch in under
 two minutes, and apply it to a Solostorm session.
 
+**Status (2026-10-26): done except custom fonts; the two-minute build is
+not yet timed by a person.**
+- Stage editing: click or marquee to select, Shift/Ctrl-click to add,
+  drag to move, corner handles to resize (aspect kept, opposite corner
+  fixed). Moves and resizes snap to the frame edges, centre, a 2% safe
+  margin, and other widgets' edges and centres, with guides; Alt places
+  freely. Arrows nudge by one output pixel (Shift: ten), Ctrl+D
+  duplicates, Del deletes, Ctrl+A selects all, Esc clears. Each drag is one
+  undo step.
+- The right column has Sync and Layout tabs. Layout has the layer list
+  (front first, drag to reorder, show/hide, lock, a warning when the data
+  lacks a bound channel) and the selected widget's properties: channel
+  picker with each channel's live value and range, display unit, style
+  fields declared by each widget (`styleFields`), and position in pixels.
+  Changing a channel moves data-derived style values (a gauge's range) and
+  channel-named labels along with it; values the user edited stay.
+- Templates (`core/layout/templates.ts`) store canonical bindings, so a
+  layout built on Solostorm data resolved every channel on the AiM file in
+  the harness, and the reverse is a unit test. They're saved to
+  `userData/layout-templates.json` (localStorage in the browser harness).
+- New widgets: lap timer (lap number, running time, best lap) and delta to
+  best lap. Delta is distance-based: speed is integrated into distance and
+  each lap is scaled to the best lap's length. On the 12-lap SVT session it
+  is 0 on the best lap and matches each lap's time difference at the line
+  to within 5 ms.
+- The default layout adds the lap timer when the data has laps, and the
+  delta when there are at least two timed laps.
+- The full 10-widget layout draws in 0.1 ms per frame (0.3 ms p95) at
+  2688×1512.
+- Verified in the browser harness by driving pointer events, keyboard
+  shortcuts and the menus. The harness pane was too small for a useful
+  visual review of the new panels.
+- **Open:** font choice for overlay text; template import/export to a file
+  for sharing; align and distribute commands for multi-selections.
+
 ### M4 — Export
 
 - Production pipeline from the spike: WebGPU atlas compositor, NV12 pack,

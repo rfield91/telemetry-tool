@@ -60,6 +60,8 @@ export interface WidgetInstance {
   rect: Rect
   /** Widget input name → canonical channel (or a raw channel key). */
   bindings: Record<string, CanonicalChannelId | string>
+  /** Widget input name → display unit id, overriding the channel's default. */
+  units?: Record<string, string>
   style: Record<string, unknown>
   hidden?: boolean
   locked?: boolean

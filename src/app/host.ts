@@ -1,9 +1,10 @@
 import { isUserProfileDefinition, type UserProfileDefinition } from '../core/data/profiles/user'
+import { isLayoutTemplate, type LayoutTemplate } from '../core/layout/templates'
 import type { ByteRange, RandomAccessFile } from '../core/media/file'
 
 /**
  * Everything the UI needs from the machine: picking files, reading them and
- * persisting user logger profiles. Electron implements it over IPC; the dev
+ * persisting user logger profiles and layout templates. Electron implements it over IPC; the dev
  * build in a plain browser uses the Vite dev-server endpoints.
  */
 export interface FileHost {
@@ -17,12 +18,32 @@ export interface FileHost {
   mediaUrl(path: string): string
   loadProfiles(): Promise<UserProfileDefinition[]>
   saveProfiles(profiles: UserProfileDefinition[]): Promise<void>
+  loadTemplates(): Promise<LayoutTemplate[]>
+  saveTemplates(templates: LayoutTemplate[]): Promise<void>
 }
 
 const PROFILES_KEY = 'telemetry-overlay.logger-profiles'
+const TEMPLATES_KEY = 'telemetry-overlay.layout-templates'
 
 const validProfiles = (value: unknown) =>
   Array.isArray(value) ? value.filter(isUserProfileDefinition) : []
+const validTemplates = (value: unknown) => (Array.isArray(value) ? value.filter(isLayoutTemplate) : [])
+
+function loadLocal(key: string): unknown {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveLocal(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Storage unavailable (private window); the list lasts for the session.
+  }
+}
 
 function electronHost(api: TelemetryOverlayApi): FileHost {
   return {
@@ -37,6 +58,8 @@ function electronHost(api: TelemetryOverlayApi): FileHost {
     mediaUrl: (path) => `media://local/${encodeURIComponent(path)}`,
     loadProfiles: async () => validProfiles(await api.loadProfiles()),
     saveProfiles: (profiles) => api.saveProfiles(profiles),
+    loadTemplates: async () => validTemplates(await api.loadTemplates()),
+    saveTemplates: (templates) => api.saveTemplates(templates),
   }
 }
 
@@ -82,20 +105,10 @@ function browserHost(): FileHost {
       }
     },
     mediaUrl: (path) => endpoint('file', path),
-    async loadProfiles() {
-      try {
-        return validProfiles(JSON.parse(localStorage.getItem(PROFILES_KEY) ?? '[]'))
-      } catch {
-        return []
-      }
-    },
-    async saveProfiles(profiles) {
-      try {
-        localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
-      } catch {
-        // Storage unavailable (private window); profiles last for the session.
-      }
-    },
+    loadProfiles: async () => validProfiles(loadLocal(PROFILES_KEY)),
+    saveProfiles: async (profiles) => saveLocal(PROFILES_KEY, profiles),
+    loadTemplates: async () => validTemplates(loadLocal(TEMPLATES_KEY)),
+    saveTemplates: async (templates) => saveLocal(TEMPLATES_KEY, templates),
   }
 }
 

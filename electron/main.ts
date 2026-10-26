@@ -7,6 +7,15 @@ import { allowFile, fileSize, readRanges, serveFile, type ByteRange } from './fi
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.join(currentDir, '..')
 const profilesPath = () => path.join(app.getPath('userData'), 'logger-profiles.json')
+const templatesPath = () => path.join(app.getPath('userData'), 'layout-templates.json')
+
+async function readJsonList(file: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(file, 'utf8')) as unknown
+  } catch {
+    return []
+  }
+}
 
 // `media://local/<encoded path>` streams picked files to <video> with ranges.
 protocol.registerSchemesAsPrivileged([
@@ -69,15 +78,13 @@ app.whenReady().then(() => {
     return new TextDecoder().decode(bytes)
   })
 
-  ipcMain.handle('profiles:load', async () => {
-    try {
-      return JSON.parse(await readFile(profilesPath(), 'utf8')) as unknown
-    } catch {
-      return []
-    }
-  })
+  ipcMain.handle('profiles:load', () => readJsonList(profilesPath()))
   ipcMain.handle('profiles:save', (_event, profiles: unknown) =>
     writeFile(profilesPath(), `${JSON.stringify(profiles, null, 2)}\n`),
+  )
+  ipcMain.handle('templates:load', () => readJsonList(templatesPath()))
+  ipcMain.handle('templates:save', (_event, templates: unknown) =>
+    writeFile(templatesPath(), `${JSON.stringify(templates, null, 2)}\n`),
   )
 
   createWindow()

@@ -2,6 +2,7 @@ import { Film, Table2 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { OverlayRenderer } from '../../core/widgets/renderer'
 import { openTelemetry, openVideo } from '../actions'
+import { LayoutEditor } from './LayoutEditor'
 import { player } from '../player'
 import { runtimeStore, useActivePair, useProject, useRuntime } from '../state'
 
@@ -158,13 +159,14 @@ export function Stage() {
           />
         )}
         <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+        {session && <LayoutEditor width={box.width} height={box.height} />}
         {videoError && (
           <div className="absolute inset-x-6 top-6 rounded-md border border-danger/40 bg-surface/95 p-3 text-[13px] text-fg">
             {videoError}
           </div>
         )}
         {showPerf && perf && (
-          <dl className="absolute right-2 top-2 grid grid-cols-[auto_auto] gap-x-3 rounded-md bg-black/75 px-2.5 py-1.5 font-mono text-[11px] leading-4 tabular text-fg-muted">
+          <dl className="pointer-events-none absolute right-2 top-2 grid grid-cols-[auto_auto] gap-x-3 rounded-md bg-black/75 px-2.5 py-1.5 font-mono text-[11px] leading-4 tabular text-fg-muted">
             <dt className="text-fg-subtle">overlay</dt>
             <dd className="text-right">
               {perf.drawMs.toFixed(2)} ms <span className="text-fg-subtle">avg</span> {perf.maxDrawMs.toFixed(2)}{' '}

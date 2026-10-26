@@ -44,10 +44,16 @@ export async function loadUserProfiles() {
   }
 }
 
-function frameAspect(): number {
+/** Output frame size: the video's, or 1920×1080 before one is loaded. */
+export function frameSize(): { width: number; height: number } {
   const { project } = projectStore.getState()
   const video = project.videos[0] && runtimeStore.getState().videos[project.videos[0].id]
-  return video ? video.probe.video.width / video.probe.video.height : 16 / 9
+  return video ? { width: video.probe.video.width, height: video.probe.video.height } : { width: 1920, height: 1080 }
+}
+
+export function frameAspect(): number {
+  const { width, height } = frameSize()
+  return width / height
 }
 
 function ensureSync(videoId: string | undefined, telemetryId: string | undefined) {
@@ -261,22 +267,5 @@ export function toggleLapSelection(lapIndex: number) {
     if (at >= 0) laps.splice(at, 1)
     else laps.push(lapIndex)
     laps.sort((a, b) => a - b)
-  })
-}
-
-export function resetLayout() {
-  const { project } = projectStore.getState()
-  const session = project.telemetry[0] && runtimeStore.getState().sessions[project.telemetry[0].id]
-  if (!session) return
-  const layout = createDefaultLayout(session, frameAspect())
-  update('Reset layout', (draft) => {
-    draft.layout.widgets = layout
-  })
-}
-
-export function toggleWidget(id: string) {
-  update('Toggle widget', (draft) => {
-    const widget = draft.layout.widgets.find((w) => w.id === id)
-    if (widget) widget.hidden = !widget.hidden
   })
 }

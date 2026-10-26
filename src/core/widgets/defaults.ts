@@ -13,6 +13,22 @@ export function rectForHeight(type: string, frameAspect: number, h: number, x: n
   return { x, y, w, h }
 }
 
+/** Default bindings: each input's canonical channel. */
+export function defaultBindings(type: string): Record<string, string> {
+  return Object.fromEntries(WIDGETS[type]!.inputs.map((input) => [input.name, input.channel]))
+}
+
+/** Style defaults derived from the bound data (e.g. a gauge's range). */
+export function defaultStyleFor(
+  type: string,
+  session: TelemetrySession | null,
+  bindings: Record<string, string>,
+  units?: Record<string, string>,
+): Record<string, unknown> {
+  const data = createWidgetData(resolveInputs(session, bindings, units), 0, 'defaults', session?.laps)
+  return WIDGETS[type]!.defaultStyle(data)
+}
+
 export function createWidget(
   type: string,
   session: TelemetrySession | null,
@@ -20,32 +36,39 @@ export function createWidget(
   bindings?: Record<string, string>,
   style: Record<string, unknown> = {},
 ): WidgetInstance {
-  const definition = WIDGETS[type]
-  if (!definition) throw new Error(`Unknown widget type "${type}"`)
-  const resolvedBindings = bindings ?? Object.fromEntries(definition.inputs.map((input) => [input.name, input.channel]))
-  const data = createWidgetData(resolveInputs(session, resolvedBindings), 0, 'defaults')
+  if (!WIDGETS[type]) throw new Error(`Unknown widget type "${type}"`)
+  const resolvedBindings = bindings ?? defaultBindings(type)
   return {
     id: crypto.randomUUID(),
     type,
     rect,
     bindings: resolvedBindings,
-    style: { ...definition.defaultStyle(data), ...style },
+    style: { ...defaultStyleFor(type, session, resolvedBindings), ...style },
   }
 }
 
 const READOUT_CHANNELS: CanonicalChannelId[] = ['rpm', 'coolantTemp', 'oilPressure', 'oilTemp']
 
 /**
- * A starting layout using whichever channels the session has: speed gauge
- * and throttle bar bottom-left, up to three readouts, track map top-right,
- * g-meter bottom-right.
+ * A starting layout using whichever channels the session has: lap timer and
+ * delta top-left, speed gauge and throttle bar bottom-left, up to three
+ * readouts, track map top-right, g-meter bottom-right.
  */
 export function createDefaultLayout(session: TelemetrySession, frameAspect: number): WidgetInstance[] {
   const has = (id: CanonicalChannelId) => findChannel(session, id) !== undefined
   const margin = 0.02
   const widgets: WidgetInstance[] = []
-  let x = margin
 
+  let top = margin
+  if (session.laps.length > 0) {
+    widgets.push(createWidget('lapTimer', session, rectForHeight('lapTimer', frameAspect, 0.09, margin, top)))
+    top += 0.09 + 0.008
+  }
+  if (has('speed') && session.laps.filter((lap) => lap.kind === 'timed').length > 1) {
+    widgets.push(createWidget('delta', session, rectForHeight('delta', frameAspect, 0.09, margin, top)))
+  }
+
+  let x = margin
   if (has('speed')) {
     const rect = rectForHeight('gauge', frameAspect, 0.36, x, 1 - margin - 0.36)
     widgets.push(createWidget('gauge', session, rect, { value: 'speed' }, { label: 'SPEED' }))

@@ -73,6 +73,7 @@ export function parseProject(text: string): Project {
     const rect = widget.rect
     check(isRecord(rect) && [rect.x, rect.y, rect.w, rect.h].every(isFiniteNumber), `${at} needs a rect`)
     check(isRecord(widget.bindings) && Object.values(widget.bindings).every(isString), `${at} has invalid bindings`)
+    check(widget.units === undefined || (isRecord(widget.units) && Object.values(widget.units).every(isString)), `${at} has invalid units`)
     check(isRecord(widget.style), `${at} needs a style object`)
   })
   const exportSettings = data.export

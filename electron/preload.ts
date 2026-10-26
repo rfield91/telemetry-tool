@@ -23,6 +23,8 @@ const api = {
   readText: (path: string) => ipcRenderer.invoke('file:readText', path) as Promise<string>,
   loadProfiles: () => ipcRenderer.invoke('profiles:load') as Promise<unknown>,
   saveProfiles: (profiles: unknown) => ipcRenderer.invoke('profiles:save', profiles) as Promise<void>,
+  loadTemplates: () => ipcRenderer.invoke('templates:load') as Promise<unknown>,
+  saveTemplates: (templates: unknown) => ipcRenderer.invoke('templates:save', templates) as Promise<void>,
 }
 
 contextBridge.exposeInMainWorld('telemetryOverlay', api)

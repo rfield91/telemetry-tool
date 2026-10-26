@@ -77,7 +77,7 @@ export function lapsFromLapNumbers(
 }
 
 /** Fastest timed lap; out/in laps are never "best". */
-export function bestLap(laps: Lap[]): Lap | null {
+export function bestLap(laps: readonly Lap[]): Lap | null {
   let best: Lap | null = null
   for (const lap of laps) {
     if (lap.kind !== 'timed') continue
@@ -86,7 +86,7 @@ export function bestLap(laps: Lap[]): Lap | null {
   return best
 }
 
-export function lapAt(laps: Lap[], time: number): Lap | null {
+export function lapAt(laps: readonly Lap[], time: number): Lap | null {
   return laps.find((lap) => time >= lap.start && time < lap.end) ?? null
 }
 

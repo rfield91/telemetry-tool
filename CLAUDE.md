@@ -31,21 +31,25 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - `dev/fileServer.ts`: dev-only Vite middleware mirroring the file IPC.
 - `src/App.tsx` + `src/app/`: the React UI. `state.ts` (undoable project
   store + runtime store), `actions.ts`, `host.ts` (Electron vs browser file
-  access), `player.ts` (playback clock), `sync/` (worker + client),
-  `components/` (Stage, Transport,
-  MediaPanel, InspectorPanel, MappingDialog, ui primitives).
+  access), `player.ts` (playback clock), `layout.ts` (layout edits and
+  templates), `sync/` (worker + client), `components/` (Stage,
+  LayoutEditor, Transport, MediaPanel, InspectorPanel, LayoutPanel,
+  ChannelPicker, MappingDialog, ui primitives).
 - `src/core/`: framework-free logic (no React; canvas code is
   OffscreenCanvas-compatible), unit tested:
   - `data/`: CSV parsing, timestamps and clocks, units, canonical channels,
     series, GPS projection, logger profiles (`profiles/`), and `import.ts`
     (CSV → `TelemetrySession`).
-  - `laps/`: lap model from logger markers.
+  - `laps/`: lap model from logger markers, delta to best lap.
   - `media/`: MP4 reader, protobuf decoding, camera adapters (`cameras/`,
     DJI so far), `probeVideo`.
   - `sync/`: auto-sync engine (FFT correlation, lap candidates, half-split
     drift check, confidence) and logger yaw extraction with GPS fallbacks.
-  - `widgets/`: widget definitions, binding/units (`data.ts`), default
-    layout, and `OverlayRenderer` (cached static layers).
+  - `widgets/`: widget definitions (with their editable `styleFields`),
+    binding/units (`data.ts`), default layout, and `OverlayRenderer`
+    (cached static layers).
+  - `layout/`: editor geometry (snapping, move, resize) and layout
+    templates bound to canonical channels.
   - `project/`: project schema, save/load validation, Zustand store with
     Immer-patch undo/redo.
 - `sample-data/3.csv`: AiM session (4 laps). `sample-data/solostorm/`: two
@@ -72,7 +76,10 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - Project files reference media and CSVs by path; decoded data is never
   stored in them.
 - Every project edit goes through `store.update(label, recipe)` so it is
-  undoable; pass a `coalesceKey` for continuous edits like drags.
+  undoable; pass a `coalesceKey` for continuous edits like drags (use
+  `gestureKey()` in `layout.ts` so separate drags stay separate steps).
+- New widget types: add the definition with its `styleFields` and register
+  it in `widgets/registry.ts` (that order is the Add menu's order).
 - Widgets put everything that doesn't change per frame in `drawStatic`;
   `drawDynamic` must stay cheap (the full layout is ~0.2 ms per frame).
 - New cameras: add a `CameraAdapter` in `src/core/media/cameras/` and
@@ -93,8 +100,8 @@ builds on. The old prototype is at git tag `prototype-v0`.
 ## Status
 
 On branch `redesign`: M0 (foundation) and M1 (import and preview) are
-implemented, and M2 (auto-sync) is done except image-motion sync and lap
-thumbnails. Tests, typecheck, lint and build pass. M1 was verified in the
+implemented, M2 (auto-sync) is done except image-motion sync and lap
+thumbnails, and M3 (layout editor) is done except overlay fonts. Tests, typecheck, lint and build pass. M1 was verified in the
 browser harness. The Electron window itself hasn't been exercised by an
 automated check yet. `dist/`, `dist-electron/` and `release/` are build output and are
 gitignored.

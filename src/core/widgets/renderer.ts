@@ -67,10 +67,10 @@ export class OverlayRenderer {
   }
 
   private resolve(widget: WidgetInstance, session: TelemetrySession | null) {
-    const key = `${this.sessionId(session)}|${JSON.stringify(widget.bindings)}`
+    const key = `${this.sessionId(session)}|${JSON.stringify(widget.bindings)}|${JSON.stringify(widget.units ?? {})}`
     let entry = this.inputs.get(widget.id)
     if (!entry || entry.key !== key) {
-      entry = { key, inputs: resolveInputs(session, widget.bindings) }
+      entry = { key, inputs: resolveInputs(session, widget.bindings, widget.units) }
       this.inputs.set(widget.id, entry)
     }
     return entry
@@ -94,7 +94,7 @@ export class OverlayRenderer {
       live.add(widget.id)
 
       const { key: dataKey, inputs } = this.resolve(widget, session)
-      const data = createWidgetData(inputs, time, dataKey)
+      const data = createWidgetData(inputs, time, dataKey, session?.laps)
       const size = { width: box.width, height: box.height }
       const layerKey = `${box.width}x${box.height}|${JSON.stringify(widget.style)}|${dataKey}`
       let layer = this.layers.get(widget.id)

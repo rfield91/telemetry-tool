@@ -25,6 +25,10 @@ export const trackMapWidget: WidgetDefinition<TrackMapStyle, Prepared | null> = 
     { name: 'longitude', label: 'Longitude', channel: 'longitude' },
   ],
   aspect: 1,
+  styleFields: [
+    { key: 'accent', label: 'Car colour', kind: 'color' },
+    { key: 'lineColor', label: 'Track colour', kind: 'color' },
+  ],
   defaultStyle() {
     return { accent: '#38bdf8', lineColor: 'rgba(255,255,255,0.4)' }
   },

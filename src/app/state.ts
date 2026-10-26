@@ -6,6 +6,7 @@ import { ProfileRegistry } from '../core/data/profiles/registry'
 import type { VideoProbe } from '../core/media/probe'
 import { createProjectStore, type ProjectState } from '../core/project/store'
 import type { Series } from '../core/data/series'
+import type { LayoutTemplate } from '../core/layout/templates'
 import type { SyncRunOutput } from './sync/protocol'
 
 /** The undoable project document (files, sync offset, layout). */
@@ -39,6 +40,11 @@ export interface RuntimeState {
   showStats: boolean
   /** Latest auto-sync run for the active video/data pair. */
   syncRun: SyncRun
+  /** Selected widget ids, in selection order. */
+  selection: string[]
+  /** Saved layout templates. */
+  templates: LayoutTemplate[]
+  inspectorTab: 'sync' | 'layout'
 }
 
 export type SyncRun =
@@ -66,6 +72,9 @@ export const runtimeStore = createStore<RuntimeState>()(() => ({
   playing: false,
   showStats: false,
   syncRun: { status: 'idle' },
+  selection: [],
+  templates: [],
+  inspectorTab: 'sync',
 }))
 
 export function useRuntime<T>(selector: (state: RuntimeState) => T): T {
@@ -91,6 +100,13 @@ export function timeMap(offset: number, drift: number, hasVideo: boolean): TimeM
     toData: (videoTime) => (videoTime - offset) / (1 + drift),
     toVideo: (dataTime) => offset + dataTime * (1 + drift),
   }
+}
+
+/** Selected widgets that still exist (undo can remove them). */
+export function useSelectedWidgets() {
+  const selection = useRuntime((s) => s.selection)
+  const widgets = useProject((s) => s.project.layout.widgets)
+  return useMemo(() => widgets.filter((w) => selection.includes(w.id)), [widgets, selection])
 }
 
 /** The single video/telemetry pair the preview works with. */

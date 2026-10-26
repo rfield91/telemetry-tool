@@ -1,43 +1,37 @@
-import {
-  ChartColumn,
-  CircleCheck,
-  CircleDashed,
-  Crosshair,
-  Eye,
-  EyeOff,
-  Gauge,
-  Hash,
-  LoaderCircle,
-  RefreshCw,
-  RotateCcw,
-  Route,
-  TriangleAlert,
-  type LucideIcon,
-} from 'lucide-react'
+import { CircleCheck, CircleDashed, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { CANONICAL_CHANNELS, isCanonicalChannelId } from '../../core/data/channels'
-import type { WidgetInstance } from '../../core/project/schema'
-import { WIDGETS } from '../../core/widgets/registry'
-import { autoSync, chooseSyncMatch, resetLayout, setOffset, toggleWidget } from '../actions'
+import { autoSync, chooseSyncMatch, setOffset } from '../actions'
 import { formatClock } from '../format'
-import { useActivePair, useProject, useRuntime } from '../state'
+import { runtimeStore, useActivePair, useProject, useRuntime } from '../state'
+import { LayoutPanel } from './LayoutPanel'
 import { SyncPlot } from './SyncPlot'
 import { Button, Disclosure, inputClass, Section } from './ui'
 
-const WIDGET_ICONS: Record<string, LucideIcon> = {
-  gauge: Gauge,
-  bar: ChartColumn,
-  readout: Hash,
-  trackMap: Route,
-  gMeter: Crosshair,
-}
+const TABS = [
+  { id: 'sync', label: 'Sync' },
+  { id: 'layout', label: 'Layout' },
+] as const
 
-/** Right column: sync offset and the overlay's layers. */
+/** Right column: sync, or the overlay layout (layers and the selected widget). */
 export function InspectorPanel() {
+  const tab = useRuntime((s) => s.inspectorTab)
   return (
     <aside className="flex min-h-0 flex-col border-l border-line bg-surface">
-      <SyncSection />
-      <OverlaySection />
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line px-3" role="tablist">
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => runtimeStore.setState({ inspectorTab: id })}
+            className={`h-7 rounded-md px-2.5 text-[13px] transition-colors ${tab === id ? 'bg-raised text-fg' : 'text-fg-muted hover:text-fg'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{tab === 'sync' ? <SyncSection /> : <LayoutPanel />}</div>
     </aside>
   )
 }
@@ -247,62 +241,5 @@ function SyncStatus({ canAutoSync, manual }: { canAutoSync: boolean; manual: boo
         </button>
       )}
     </div>
-  )
-}
-
-/** Layer name: the bound channel for single-input widgets, else the widget type. */
-function layerName(widget: WidgetInstance): string {
-  const bindings = Object.values(widget.bindings)
-  if (bindings.length === 1 && isCanonicalChannelId(bindings[0])) return CANONICAL_CHANNELS[bindings[0]].label
-  if (bindings.length === 1) return bindings[0]!
-  return WIDGETS[widget.type]?.label ?? widget.type
-}
-
-function OverlaySection() {
-  const widgets = useProject((s) => s.project.layout.widgets)
-  const { session } = useActivePair()
-  return (
-    <Section
-      title="Overlay"
-      grow
-      action={
-        session && (
-          <Button variant="ghost" icon={RotateCcw} title="Replace the layout with the default one" onClick={resetLayout}>
-            Reset
-          </Button>
-        )
-      }
-    >
-      {!session ? (
-        <p className="text-xs leading-relaxed text-fg-subtle">Gauges, a track map and a g-meter are added when data is loaded.</p>
-      ) : (
-        <ul className="-mx-2 space-y-px">
-          {widgets.map((widget) => {
-            const Icon = WIDGET_ICONS[widget.type] ?? Hash
-            const typeLabel = WIDGETS[widget.type]?.label ?? widget.type
-            const name = layerName(widget)
-            const hidden = !!widget.hidden
-            return (
-              <li key={widget.id} className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-hover">
-                <Icon size={15} className={hidden ? 'text-fg-subtle' : 'text-fg-muted'} aria-hidden />
-                <span className={`min-w-0 flex-1 truncate ${hidden ? 'text-fg-subtle' : 'text-fg'}`}>
-                  {name}
-                  {name !== typeLabel && <span className="ml-1.5 text-xs text-fg-subtle">{typeLabel}</span>}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => toggleWidget(widget.id)}
-                  title={hidden ? 'Show' : 'Hide'}
-                  aria-label={`${hidden ? 'Show' : 'Hide'} ${name}`}
-                  className={`grid size-6 place-items-center rounded text-fg-subtle hover:text-fg ${hidden ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
-                >
-                  {hidden ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </Section>
   )
 }

@@ -6,6 +6,7 @@ import { convert } from '../data/units'
 import { createWidgetData, resolveInputs } from './data'
 import { createDefaultLayout } from './defaults'
 import { niceMax, niceStep } from './draw'
+import { formatRunningTime } from './lapTimer'
 import { OverlayRenderer, type LayerCanvas } from './renderer'
 import type { Ctx2D } from './types'
 
@@ -51,8 +52,8 @@ describe('widget data', () => {
 describe('createDefaultLayout', () => {
   const layout = createDefaultLayout(session, 16 / 9)
 
-  it('places the five widget types for a full Solostorm session', () => {
-    expect(layout.map((w) => w.type)).toEqual(['gauge', 'bar', 'readout', 'readout', 'readout', 'trackMap', 'gMeter'])
+  it('places the widget types for a full Solostorm session', () => {
+    expect(layout.map((w) => w.type)).toEqual(['lapTimer', 'gauge', 'bar', 'readout', 'readout', 'readout', 'trackMap', 'gMeter'])
     for (const widget of layout) {
       expect(widget.rect.x).toBeGreaterThanOrEqual(0)
       expect(widget.rect.y).toBeGreaterThanOrEqual(0)
@@ -63,7 +64,7 @@ describe('createDefaultLayout', () => {
 
   it('derives ranges from the data', () => {
     // Peak speed is about 68 mph.
-    expect(layout[0]!.style).toMatchObject({ label: 'SPEED', min: 0, max: 80 })
+    expect(layout.find((w) => w.type === 'gauge')!.style).toMatchObject({ label: 'SPEED', min: 0, max: 80 })
     expect(layout.find((w) => w.type === 'gMeter')!.style.maxG).toBe(1.5)
   })
 })
@@ -108,5 +109,13 @@ describe('nice ranges', () => {
     expect(niceMax(7600)).toBe(8000)
     expect(niceStep(80)).toBe(10)
     expect(niceStep(8000)).toBe(1000)
+  })
+})
+
+describe('lap timer', () => {
+  it('truncates the running time to the chosen decimals', () => {
+    expect(formatRunningTime(83.4567, 1)).toBe('1:23.4')
+    expect(formatRunningTime(83.4567, 3)).toBe('1:23.456')
+    expect(formatRunningTime(9.99, 0)).toBe('0:09')
   })
 })

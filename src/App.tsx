@@ -8,8 +8,9 @@ import { Stage } from './app/components/Stage'
 import { Transport } from './app/components/Transport'
 import { IconButton } from './app/components/ui'
 import { host } from './app/host'
+import { deleteSelection, duplicateSelection, loadTemplates, nudgeSelection, select, selectAll } from './app/layout'
 import { player } from './app/player'
-import { projectStore, useProject, useRuntime } from './app/state'
+import { projectStore, runtimeStore, useProject, useRuntime } from './app/state'
 import { redoLabel, undoLabel } from './core/project/store'
 
 /** Dev harness: `?video=<path>&csv=<path>&offset=<s>` loads files in a plain browser. */
@@ -34,6 +35,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false)
 
   useEffect(() => {
+    void loadTemplates()
     void loadUserProfiles().then(loadFromQuery)
   }, [])
 
@@ -52,7 +54,26 @@ export default function App() {
         return
       }
       if (isTyping(event.target)) return
-      if (event.key === ' ') {
+      const hasSelection = runtimeStore.getState().selection.length > 0
+      const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+      if (mod && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        duplicateSelection()
+      } else if (mod && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        selectAll()
+      } else if (hasSelection && arrows[event.key]) {
+        // With widgets selected, arrows nudge them instead of stepping frames.
+        event.preventDefault()
+        const [dx, dy] = arrows[event.key]!
+        const step = event.shiftKey ? 10 : 1
+        nudgeSelection(dx * step, dy * step)
+      } else if (hasSelection && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault()
+        deleteSelection()
+      } else if (event.key === 'Escape') {
+        select([])
+      } else if (event.key === ' ') {
         event.preventDefault()
         player.toggle()
       } else if (event.key === 'ArrowLeft') {
@@ -88,7 +109,7 @@ export default function App() {
       }}
     >
       <Header />
-      <div className="grid min-h-0 grid-cols-[19rem_1fr_16rem]">
+      <div className="grid min-h-0 grid-cols-[19rem_1fr_19rem]">
         <MediaPanel />
         <main className="flex min-h-0 min-w-0 flex-col">
           <div className="flex min-h-0 min-w-0 flex-1 p-5">

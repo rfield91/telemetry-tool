@@ -25,6 +25,13 @@ export const gaugeWidget: WidgetDefinition<GaugeStyle> = {
   label: 'Dial gauge',
   inputs: [{ name: 'value', label: 'Value', channel: 'speed' }],
   aspect: 1,
+  styleFields: [
+    { key: 'label', label: 'Label', kind: 'text' },
+    { key: 'accent', label: 'Colour', kind: 'color' },
+    { key: 'min', label: 'Minimum', kind: 'number' },
+    { key: 'max', label: 'Maximum', kind: 'number' },
+    { key: 'decimals', label: 'Decimals', kind: 'number', min: 0, max: 3, step: 1 },
+  ],
   defaultStyle(data) {
     const series = data.series('value')
     let max = 0

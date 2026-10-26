@@ -1,5 +1,6 @@
 import type { CanonicalChannelId } from '../data/channels'
 import type { Series } from '../data/series'
+import type { Lap } from '../laps/laps'
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
@@ -25,9 +26,18 @@ export interface WidgetData {
   unit(input: string): string
   /** Raw series in base units, for whole-session drawings (track map). */
   series(input: string): Series | null
+  /** The session's laps (session seconds). */
+  laps: readonly Lap[]
   /** Changes whenever the bound data changes; part of static-layer keys. */
   version: string
 }
+
+/** One editable style property, for the inspector. */
+export type StyleField =
+  | { key: string; label: string; kind: 'text' }
+  | { key: string; label: string; kind: 'color' }
+  | { key: string; label: string; kind: 'number'; min?: number; max?: number; step?: number }
+  | { key: string; label: string; kind: 'toggle' }
 
 export type WidgetStyle = Record<string, unknown>
 
@@ -41,6 +51,8 @@ export interface WidgetDefinition<S extends WidgetStyle = WidgetStyle, P = void>
   inputs: WidgetInputSpec[]
   /** Box width ÷ height; widgets keep this shape when resized. */
   aspect: number
+  /** Style properties users can edit, in display order. */
+  styleFields: StyleField[]
   defaultStyle(data: WidgetData): S
   /** Draw the cached layer and return anything the dynamic pass needs. */
   drawStatic(ctx: Ctx2D, size: WidgetSize, style: S, data: WidgetData): P

@@ -7,6 +7,8 @@ declare global {
     readText(path: string): Promise<string>
     loadProfiles(): Promise<unknown>
     saveProfiles(profiles: unknown): Promise<void>
+    loadTemplates(): Promise<unknown>
+    saveTemplates(templates: unknown): Promise<void>
   }
 
   interface Window {

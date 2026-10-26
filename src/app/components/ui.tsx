@@ -1,5 +1,5 @@
 import { ChevronRight, type LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 export function Section({
   title,
@@ -122,3 +122,195 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export const inputClass =
   'h-7 w-full rounded-md border border-line bg-canvas px-2 text-[13px] text-fg outline-none transition-colors hover:border-line-strong focus:border-accent'
+
+/**
+ * A button that opens a floating panel below it. Closes on Escape, on a
+ * click outside, or when the panel calls `close`.
+ */
+export function Popover({
+  trigger,
+  children,
+  align = 'end',
+  className = 'w-56',
+}: {
+  trigger: (props: { open: boolean; toggle: () => void }) => ReactNode
+  children: (close: () => void) => ReactNode
+  align?: 'start' | 'end'
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointer = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointer)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [open])
+  return (
+    <div ref={ref} className="relative">
+      {trigger({ open, toggle: () => setOpen((value) => !value) })}
+      {open && (
+        <div
+          className={`absolute top-full z-30 mt-1 rounded-lg border border-line bg-raised p-1 shadow-xl shadow-black/40 ${
+            align === 'end' ? 'right-0' : 'left-0'
+          } ${className}`}
+        >
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function MenuItem({
+  icon: Icon,
+  children,
+  onClick,
+  trailing,
+  disabled,
+}: {
+  icon?: LucideIcon
+  children: ReactNode
+  onClick: () => void
+  trailing?: ReactNode
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-fg transition-colors hover:bg-hover disabled:pointer-events-none disabled:opacity-40"
+    >
+      {Icon && <Icon size={14} className="shrink-0 text-fg-muted" aria-hidden />}
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {trailing}
+    </button>
+  )
+}
+
+export function MenuLabel({ children }: { children: ReactNode }) {
+  return <p className="px-2 pt-1.5 pb-1 text-[11px] font-medium text-fg-subtle">{children}</p>
+}
+
+export function MenuSeparator() {
+  return <div className="my-1 h-px bg-line" />
+}
+
+/** Label on the left, control on the right, for inspector rows. */
+export function PropertyRow({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
+      <label htmlFor={htmlFor} className="truncate text-xs text-fg-subtle">
+        {label}
+      </label>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
+/** Text input that edits a draft and commits on Enter or blur. */
+export function CommitInput({
+  value,
+  onCommit,
+  id,
+  className = '',
+  inputMode,
+}: {
+  value: string
+  onCommit: (text: string) => void
+  id?: string
+  className?: string
+  inputMode?: 'decimal' | 'numeric' | 'text'
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  return (
+    <input
+      id={id}
+      className={`${inputClass} ${className}`}
+      value={draft}
+      inputMode={inputMode}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => (draft === value ? undefined : onCommit(draft))}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onCommit(draft)
+        if (event.key === 'Escape') setDraft(value)
+      }}
+    />
+  )
+}
+
+/** Number input: commits on Enter/blur, ↑/↓ step (Shift ×10), clamps to range. */
+export function NumberInput({
+  value,
+  onCommit,
+  id,
+  min = -Infinity,
+  max = Infinity,
+  step = 1,
+}: {
+  value: number
+  onCommit: (value: number) => void
+  id?: string
+  min?: number
+  max?: number
+  step?: number
+}) {
+  const decimals = Math.max(0, -Math.floor(Math.log10(step)))
+  const text = Number.isFinite(value) ? String(Number(value.toFixed(Math.max(decimals, 3)))) : ''
+  const [draft, setDraft] = useState(text)
+  useEffect(() => setDraft(text), [text])
+  const commit = (next: number) => {
+    if (!Number.isFinite(next)) return setDraft(text)
+    const clamped = Math.min(max, Math.max(min, next))
+    onCommit(clamped)
+    setDraft(String(Number(clamped.toFixed(Math.max(decimals, 3)))))
+  }
+  return (
+    <input
+      id={id}
+      className={`${inputClass} font-mono tabular`}
+      value={draft}
+      inputMode="decimal"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => draft !== text && commit(Number(draft))}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit(Number(draft))
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault()
+          const delta = (event.key === 'ArrowUp' ? 1 : -1) * step * (event.shiftKey ? 10 : 1)
+          commit(Number((Number(draft) + delta).toFixed(decimals)))
+        }
+      }}
+    />
+  )
+}
+
+export function Switch({ checked, onChange, id, label }: { checked: boolean; onChange: (value: boolean) => void; id?: string; label?: string }) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative h-4 w-7 rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-line-strong'}`}
+    >
+      <span className={`absolute top-0.5 size-3 rounded-full bg-fg transition-transform ${checked ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+    </button>
+  )
+}

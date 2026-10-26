@@ -1,7 +1,8 @@
 import { CANONICAL_CHANNELS, isCanonicalChannelId } from '../data/channels'
 import type { TelemetryChannel, TelemetrySession } from '../data/import'
 import { sampleAt } from '../data/series'
-import { convert, getUnit } from '../data/units'
+import { convert, getUnit, UNITS } from '../data/units'
+import type { Lap } from '../laps/laps'
 import type { WidgetData } from './types'
 
 export interface ResolvedInput {
@@ -11,31 +12,41 @@ export interface ResolvedInput {
   toDisplay(value: number): number
 }
 
-function displayUnit(channel: TelemetryChannel): string | null {
-  const preferred = channel.canonical ? CANONICAL_CHANNELS[channel.canonical].displayUnit : null
+const knownUnit = (id: string | undefined) => !!id && UNITS.some((unit) => unit.id === id)
+
+/** The chosen unit if it measures the same quantity, else the channel's default display unit. */
+function displayUnit(channel: TelemetryChannel, chosen?: string): string | null {
   if (!channel.unit) return null
-  if (preferred && getUnit(preferred).quantity === getUnit(channel.unit).quantity) return preferred
+  const quantity = getUnit(channel.unit).quantity
+  if (chosen && knownUnit(chosen) && getUnit(chosen).quantity === quantity) return chosen
+  const preferred = channel.canonical ? CANONICAL_CHANNELS[channel.canonical].displayUnit : null
+  if (preferred && getUnit(preferred).quantity === quantity) return preferred
   return channel.unit
+}
+
+/** The session channel a binding (canonical id or raw column key) refers to. */
+export function findBoundChannel(session: TelemetrySession | null | undefined, binding: string): TelemetryChannel | undefined {
+  return session?.channels.find((c) => (isCanonicalChannelId(binding) ? c.canonical === binding : c.key === binding))
 }
 
 /**
  * Resolve widget bindings (canonical ids or raw column keys) against a
- * session. Unbound or missing inputs resolve to null.
+ * session, with optional per-input display units. Unbound or missing inputs
+ * resolve to null.
  */
 export function resolveInputs(
   session: TelemetrySession | null,
   bindings: Record<string, string>,
+  units: Record<string, string> = {},
 ): Record<string, ResolvedInput | null> {
   const resolved: Record<string, ResolvedInput | null> = {}
   for (const [input, binding] of Object.entries(bindings)) {
-    const channel = session?.channels.find((c) =>
-      isCanonicalChannelId(binding) ? c.canonical === binding : c.key === binding,
-    )
+    const channel = findBoundChannel(session, binding)
     if (!channel) {
       resolved[input] = null
       continue
     }
-    const unit = displayUnit(channel)
+    const unit = displayUnit(channel, units[input])
     const from = channel.unit
     resolved[input] = {
       channel,
@@ -50,6 +61,7 @@ export function createWidgetData(
   inputs: Record<string, ResolvedInput | null>,
   time: number,
   version: string,
+  laps: readonly Lap[] = [],
 ): WidgetData {
   const valueAt = (input: string, at: number) => {
     const resolved = inputs[input]
@@ -60,6 +72,7 @@ export function createWidgetData(
   return {
     time,
     version,
+    laps,
     value: (input) => valueAt(input, time),
     valueAt,
     unit: (input) => {

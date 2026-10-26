@@ -1,6 +1,6 @@
 # Architecture
 
-Current state of the rebuild (milestones M0–M1 of `docs/REDESIGN-PLAN.md`).
+Current state of the rebuild (milestones M0–M3 of `docs/REDESIGN-PLAN.md`).
 The original prototype (SVG gauges, transparent WebM export) is preserved at
 git tag `prototype-v0`.
 
@@ -56,6 +56,10 @@ available, start/end in session seconds and a `kind`. With more than one lap
 the first is `out` and the last `in`; a single segment is `timed`.
 GPS start/finish-line detection is planned, not built.
 
+`delta.ts` builds the delta-to-best model: speed integrated into distance,
+the best lap's elapsed time by distance, and each lap scaled to the best
+lap's length so slightly different lines compare point for point.
+
 ## Media (`src/core/media/`)
 
 | File | Responsibility |
@@ -93,8 +97,9 @@ In the app:
 ## Widgets (`src/core/widgets/`)
 
 A `WidgetDefinition` declares inputs (bound to canonical channels by
-default), a fixed aspect, default style derived from the data, and two
-drawing passes:
+default), a fixed aspect, the style fields the inspector edits
+(`styleFields`), default style derived from the data, and two drawing
+passes:
 
 - `drawStatic` renders the faces, ticks, track outline and rings into a
   cached layer, keyed by pixel size, style and bound data. It can return
@@ -104,22 +109,37 @@ drawing passes:
 `OverlayRenderer.render(ctx, frame, widgets, session, time)` positions
 widgets from fractional rects, resolves bindings once per widget, and
 records `lastFrameMs`. `data.ts` converts values to display units (mph, °F,
-psi, g). `defaults.ts` builds a starting layout from the channels present.
+psi, g, or a per-input override in `WidgetInstance.units`) and gives
+widgets the session's laps. `defaults.ts` builds a starting layout from the
+channels present.
 
 | Widget | Inputs | Notes |
 | --- | --- | --- |
 | `gauge` | value (speed) | 240° dial, range from the data's peak |
 | `bar` | value (throttle) | vertical fill |
 | `readout` | value | label + number + unit |
+| `lapTimer` | (laps) | lap number, running lap time, best lap |
+| `delta` | speed | time ahead of or behind the best lap, number and centred bar |
 | `trackMap` | latitude, longitude | outline from the whole session (decimated), car marker |
 | `gMeter` | lateral, longitudinal | rings per 0.5 g, fading 1 s trail, axis-flip options |
+
+## Layout editing (`src/core/layout/`)
+
+| File | Responsibility |
+| --- | --- |
+| `geometry.ts` | Frame-fraction geometry: snap targets (frame edges, centre, 2% safe margin, other widgets' edges and centres), `moveRect` and `resizeRect` with snapping and guides, aspect-locked corner resize, typed resizes around the centre, hit testing. |
+| `templates.ts` | `LayoutTemplate`: a saved layout with canonical bindings (raw column bindings are converted when the column is recognised), applied to any session with fresh ids and a list of channels it lacks. |
 
 ## App (`src/app/`, `src/App.tsx`)
 
 - `state.ts` has two stores:
   - `projectStore`: the undoable document (files, sync offset, layout).
   - `runtimeStore`: decoded data that's never saved (video probes,
-    sessions, raw CSV text, logger profiles, playback time).
+    sessions, raw CSV text, logger profiles, layout templates, playback
+    time, the widget selection and the inspector tab).
+- `layout.ts` has the layout edits: selection, moves and nudges, styles,
+  bindings and units (data-derived style values follow a new channel),
+  layer order, lock and visibility, add, duplicate, delete, and templates.
 - `host.ts` (`FileHost`) is the only place that knows where the app runs:
   - In Electron it uses IPC, and `media://local/<path>` for `<video>`.
   - In a plain browser it uses the dev-server endpoints, with
@@ -129,14 +149,21 @@ psi, g). `defaults.ts` builds a starting layout from the channels present.
   frame stepping, landing mid-frame.
 - `components/Stage.tsx` (the viewer) draws the overlay on every presented video frame
   using `requestVideoFrameCallback` and that frame's exact `mediaTime`.
-  Telemetry time = video time − offset. It also shows a performance HUD
-  (draw time, presented fps, dropped frames).
+  Telemetry time comes from the sync's time map. It also shows a
+  performance HUD (draw time, presented fps, dropped frames).
+- `components/LayoutEditor.tsx` sits over the viewer: select (click,
+  Shift/Ctrl-click, marquee), drag to move, corner handles to resize, snap
+  guides (Alt to place freely). Each drag is one undo step.
 - The layout has three columns:
   - `MediaPanel` (left): source cards with secondary details folded away,
     and the lap list with gaps to best.
   - The viewer and `Transport` (centre): custom timeline with lap bands,
     hover time and drag scrubbing.
-  - `InspectorPanel` (right): sync offset and overlay layers.
+  - `InspectorPanel` (right): Sync and Layout tabs. `LayoutPanel` has
+    the layer list (drag to reorder, show/hide, lock, missing-channel
+    warnings), the Add and Templates menus, and the selected widget's
+    properties. `ChannelPicker` lists channels with their live value and
+    range.
 - Files can also be dropped anywhere in the window (desktop app only;
   browsers don't expose paths).
 - Styling uses the theme tokens in `src/index.css` and the primitives in
@@ -146,6 +173,8 @@ psi, g). `defaults.ts` builds a starting layout from the channels present.
   embeds it in the project.
 
 Keyboard: Space play/pause, ←/→ frame step (Shift: 1 s), Ctrl+Z / Ctrl+Y.
+With widgets selected: arrows nudge by an output pixel (Shift: 10), Del
+deletes, Ctrl+D duplicates, Esc clears; Ctrl+A selects all.
 
 ## Electron and dev harness
 
@@ -153,7 +182,8 @@ Keyboard: Space play/pause, ←/→ frame step (Shift: 1 s), Ctrl+Z / Ctrl+Y.
   `electron/files.ts` with HTTP range support) and IPC for:
   - picking files
   - file size, batched range reads and text reads
-  - logger profiles, stored in `userData/logger-profiles.json`
+  - logger profiles and layout templates, stored in
+    `userData/logger-profiles.json` and `userData/layout-templates.json`
 - The renderer may only read files the user picked (an allowlist in
   `files.ts`).
 - `dev/fileServer.ts` is a Vite dev-server middleware (`apply: 'serve'`,
