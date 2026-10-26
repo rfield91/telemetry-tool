@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+  color: #e6edf7;
+  background: #070b12;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 70% -20%, rgb(20 184 166 / 0.09), transparent 36rem),
+    #070b12;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input[type="range"] {
+  accent-color: #2dd4bf;
+}
+
+.timeline-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.timeline-range::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+  border: none;
+}
+
+.timeline-range::-moz-range-track {
+  height: 100%;
+  background: transparent;
+  border: none;
+}
+
+.timeline-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 14px;
+  height: 22px;
+  margin-top: -3px;
+  border-radius: 3px;
+  border: 1px solid rgb(15 23 42 / 0.85);
+  background: #f8fafc;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  cursor: ew-resize;
+}
+
+.timeline-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: 14px;
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid rgb(15 23 42 / 0.85);
+  background: #f8fafc;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  cursor: ew-resize;
+}
+
+.timeline-range-in::-webkit-slider-thumb,
+.timeline-range-out::-webkit-slider-thumb {
+  background: #2dd4bf;
+}
+
+.timeline-range-in::-moz-range-thumb,
+.timeline-range-out::-moz-range-thumb {
+  background: #2dd4bf;
+}
+
+.timeline-range-playhead {
+  pointer-events: auto;
+}
+
+.timeline-range-playhead::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  border-radius: 999px;
+  border: 2px solid #f8fafc;
+  background: #0f172a;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.55), 0 1px 4px rgb(0 0 0 / 0.45);
+  cursor: grab;
+}
+
+.timeline-range-playhead::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid #f8fafc;
+  background: #0f172a;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.55), 0 1px 4px rgb(0 0 0 / 0.45);
+  cursor: grab;
+}
+
+.checkerboard {
+  background-color: #141a23;
+  background-image:
+    linear-gradient(45deg, #1b2430 25%, transparent 25%),
+    linear-gradient(-45deg, #1b2430 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1b2430 75%),
+    linear-gradient(-45deg, transparent 75%, #1b2430 75%);
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+  background-size: 24px 24px;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

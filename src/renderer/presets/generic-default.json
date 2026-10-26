@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "id": "generic-default",
+  "name": "Generic Default",
+  "description": "Single primary-value gauge for generic CSVs.",
+  "csvFormat": "generic",
+  "defaultForFormat": true,
+  "overlays": [
+    {
+      "type": "gauge",
+      "valueColumn": "$primary",
+      "label": "VALUE",
+      "unit": "",
+      "min": 0,
+      "max": 100,
+      "accent": "#2dd4bf",
+      "x": 0.5,
+      "y": 0.5,
+      "size": 0.55
+    }
+  ]
+}
