@@ -4,7 +4,12 @@ Electron + React 19 + Vite 8 + Tailwind 4 desktop app that imports racecar
 logger CSVs (AiM Race Studio or generic), lets the user lay out SVG gauges, and
 exports a transparent VP9/WebM overlay video via bundled FFmpeg.
 
-Read `docs/ARCHITECTURE.md` before non-trivial changes. It covers the data
+The app is being redeveloped as an all-in-one tool (video import, auto-sync,
+layout editor, composited export). Follow `docs/REDESIGN-PLAN.md`. The
+spikes in `spike/export-speed` and `spike/auto-sync` hold the measured
+results it builds on.
+
+Read `docs/ARCHITECTURE.md` (the current prototype) before non-trivial changes. It covers the data
 pipeline, the two renderer modes, the export pipeline, and known rough edges.
 
 ## Commands

@@ -41,7 +41,8 @@ alpha. It contains no background and no audio.
 
 ## Architecture
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design. A
+redesign is planned in [docs/REDESIGN-PLAN.md](docs/REDESIGN-PLAN.md).
 
 - `electron/` owns native file dialogs, the secure preload bridge, and FFmpeg.
 - `src/renderer/lib/telemetry.ts` parses, validates, and samples logger data.
