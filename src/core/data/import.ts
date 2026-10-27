@@ -1,11 +1,13 @@
-import type { Lap } from '../laps/laps'
+import { lapsFromBoundaries, type Lap } from '../laps/laps'
 import { CANONICAL_CHANNELS, type CanonicalChannelId } from './channels'
 import { parseCsv, parseFiniteNumber, type ParsedCsv } from './csv'
+import { AIM_XRK_PROFILE, xrkCanonical } from './profiles/aim'
 import { ProfileRegistry } from './profiles/registry'
-import type { Detection, LoggerProfile } from './profiles/types'
+import type { ChannelMapping, Detection, LoggerProfile } from './profiles/types'
 import { buildSeries, seriesRange, type Series, type SeriesStats } from './series'
 import { resolveTimestampUnit, toUtcMs, UNIT_TO_SECONDS, type ResolvedTimestampUnit, type TimeClock } from './time'
 import { BASE_UNITS, lookupUnit, toBase, type Quantity } from './units'
+import { parseXrk } from './xrk'
 
 export interface TelemetryChannel {
   /** Source column name; unique within a session. */
@@ -96,44 +98,12 @@ export function importParsed(
   let duration = 0
   for (const t of rowTimes) if (t > duration) duration = t
 
-  const channels: TelemetryChannel[] = []
-  const claimed = new Set<CanonicalChannelId>()
+  const builder = new ChannelBuilder(warnings)
   for (const mapping of profile.channels(parsed)) {
-    const sourceUnit = mapping.unit?.trim() || null
-    const unitDef = lookupUnit(sourceUnit)
-    let canonical = mapping.canonical ?? null
-    const expected = canonical ? CANONICAL_CHANNELS[canonical].quantity : null
-
-    if (canonical && claimed.has(canonical)) {
-      warnings.push(`${mapping.column}: ${canonical} is already mapped to another column`)
-      canonical = null
-    }
-    if (canonical && expected && unitDef && unitDef.quantity !== expected) {
-      warnings.push(`${mapping.column}: unit "${sourceUnit}" is not a ${expected} unit, so it isn't used as ${canonical}`)
-      canonical = null
-    }
-    if (canonical && expected && !unitDef) {
-      warnings.push(`${mapping.column}: unknown unit${sourceUnit ? ` "${sourceUnit}"` : ''}; values kept as-is`)
-    }
-
     const rawValues = Float64Array.from(parsed.rows, (row) => parseFiniteNumber(row[mapping.column]) ?? NaN)
-    const values = unitDef ? rawValues.map((value) => toBase(value, unitDef)) : rawValues
-    const { series, stats } = buildSeries(rowTimes, values)
-    if (stats.accepted === 0) continue
-    if (canonical) claimed.add(canonical)
-
-    channels.push({
-      key: mapping.column,
-      label: mapping.label ?? mapping.column,
-      canonical,
-      quantity: unitDef?.quantity ?? expected,
-      unit: unitDef ? BASE_UNITS[unitDef.quantity] : null,
-      sourceUnit,
-      series,
-      range: seriesRange(series),
-      stats,
-    })
+    builder.add(mapping, rowTimes, rawValues)
   }
+  const { channels } = builder
 
   const laps = profile.laps?.({ parsed, rowTimes, duration }) ?? []
 
@@ -153,6 +123,93 @@ export function importParsed(
     channels,
     laps,
     metadata: parsed.metadata,
+    warnings,
+  }
+}
+
+/**
+ * Turns source columns into session channels: checks each canonical mapping
+ * against its unit (and against columns already claiming it) and converts
+ * values to base units.
+ */
+class ChannelBuilder {
+  readonly channels: TelemetryChannel[] = []
+  private readonly claimed = new Set<CanonicalChannelId>()
+
+  private readonly warnings: string[]
+
+  constructor(warnings: string[]) {
+    this.warnings = warnings
+  }
+
+  add(mapping: ChannelMapping, times: ArrayLike<number>, rawValues: Float64Array) {
+    const { warnings, claimed } = this
+    const sourceUnit = mapping.unit?.trim() || null
+    const unitDef = lookupUnit(sourceUnit)
+    let canonical = mapping.canonical ?? null
+    const expected = canonical ? CANONICAL_CHANNELS[canonical].quantity : null
+
+    if (canonical && claimed.has(canonical)) {
+      warnings.push(`${mapping.column}: ${canonical} is already mapped to another column`)
+      canonical = null
+    }
+    if (canonical && expected && unitDef && unitDef.quantity !== expected) {
+      warnings.push(`${mapping.column}: unit "${sourceUnit}" is not a ${expected} unit, so it isn't used as ${canonical}`)
+      canonical = null
+    }
+    if (canonical && expected && !unitDef) {
+      warnings.push(`${mapping.column}: unknown unit${sourceUnit ? ` "${sourceUnit}"` : ''}; values kept as-is`)
+    }
+
+    const values = unitDef ? rawValues.map((value) => toBase(value, unitDef)) : rawValues
+    const { series, stats } = buildSeries(times, values)
+    if (stats.accepted === 0) return
+    if (canonical) claimed.add(canonical)
+
+    this.channels.push({
+      key: mapping.column,
+      label: mapping.label ?? mapping.column,
+      canonical,
+      quantity: unitDef?.quantity ?? expected,
+      unit: unitDef ? BASE_UNITS[unitDef.quantity] : null,
+      sourceUnit,
+      series,
+      range: seriesRange(series),
+      stats,
+    })
+  }
+}
+
+/** Import an AiM `.xrk` file (or `.xrz`, already inflated with `inflateXrz`). */
+export function importXrk(bytes: Uint8Array, fileName: string): TelemetrySession {
+  const file = parseXrk(bytes)
+  const warnings: string[] = []
+  const builder = new ChannelBuilder(warnings)
+  let rowCount = 0
+  for (const channel of file.channels) {
+    const times = channel.times.map((ms) => ms / 1000)
+    builder.add({ column: channel.name, canonical: xrkCanonical(channel.name), unit: channel.unit }, times, channel.values)
+    rowCount = Math.max(rowCount, channel.times.length)
+  }
+  if (file.skippedBytes > 0) {
+    warnings.push(`${file.skippedBytes.toLocaleString('en-US')} bytes of the file weren't recognised (expansion-device data isn't read yet)`)
+  }
+
+  const boundaries = file.laps.length > 0 ? [file.laps[0]!.start / 1000, ...file.laps.map((lap) => lap.end / 1000)] : []
+  const laps = lapsFromBoundaries(boundaries.map((t) => Math.max(0, t)), file.laps.map((lap) => lap.number))
+
+  return {
+    fileName,
+    profileId: AIM_XRK_PROFILE.id,
+    profileLabel: AIM_XRK_PROFILE.label,
+    detection: { confidence: 'high', reason: 'AiM XRK file' },
+    // XRK date and time are the logger's local clock, so there's no UTC start.
+    time: { column: 'Time', unit: 'milliseconds', clock: 'relative', startUtcMs: null },
+    duration: file.duration / 1000,
+    rowCount,
+    channels: builder.channels,
+    laps,
+    metadata: { Format: 'AiM XRK', ...file.metadata },
     warnings,
   }
 }

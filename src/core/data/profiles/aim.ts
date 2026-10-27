@@ -26,6 +26,7 @@ const AIM_CHANNELS: Record<string, CanonicalChannelId> = {
   'ECU RPM': 'rpm',
   'Engine RPM': 'rpm',
   Gear: 'gear',
+  'ECU GEAR': 'gear',
   'ECU ECT': 'coolantTemp',
   'Water Temp': 'coolantTemp',
   'ECU OIL T': 'oilTemp',
@@ -34,6 +35,26 @@ const AIM_CHANNELS: Record<string, CanonicalChannelId> = {
   'Oil Press': 'oilPressure',
   'Fuel Press': 'fuelPressure',
   'Battery Voltage': 'batteryVoltage',
+}
+
+/**
+ * Channel names inside XRK files. These are the logger's own names, which
+ * Race Studio sometimes renames on CSV export (`ECU_OIL_T` → `ECU OIL T`).
+ */
+const XRK_CHANNELS: Record<string, CanonicalChannelId> = {
+  // The logger's gyro. Same sign as the CSV's GPS Gyro on sample-data/3.csv.
+  YawRate: 'yawRate',
+  LateralAcc: 'lateralAccel',
+  InlineAcc: 'longitudinalAccel',
+  VerticalAcc: 'verticalAccel',
+  'External Voltage': 'batteryVoltage',
+}
+
+/** Identity of the XRK reader (it isn't a CSV profile, so it's not in the registry). */
+export const AIM_XRK_PROFILE = { id: 'aim-xrk', label: 'AiM XRK' } as const
+
+export function xrkCanonical(name: string): CanonicalChannelId | undefined {
+  return XRK_CHANNELS[name] ?? AIM_CHANNELS[name] ?? AIM_CHANNELS[name.replace(/_/g, ' ')]
 }
 
 function timeColumn(parsed: ParsedCsv): string {

@@ -138,7 +138,7 @@ export default function App() {
           <div className="flex flex-col items-center gap-2 text-fg">
             <Upload size={24} className="text-accent" aria-hidden />
             <p className="font-medium">Drop a video or data file</p>
-            <p className="text-xs text-fg-subtle">MP4 / MOV / CSV</p>
+            <p className="text-xs text-fg-subtle">MP4 / MOV / CSV / XRK</p>
           </div>
         </div>
       )}

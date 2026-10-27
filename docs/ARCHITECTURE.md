@@ -9,6 +9,7 @@ git tag `prototype-v0`.
 ```
                     ┌──────────── src/core (framework-free, testable) ────────────┐
 CSV text ──► data/  parseCsv → ProfileRegistry → importParsed → TelemetrySession
+XRK bytes ─► data/  parseXrk (binary AiM log) ──────► importXrk ──┘
                                                                 (base units, laps)
 MP4 file ──► media/ readMp4 (sample tables) → camera adapters → VideoProbe
                     (byte ranges via RandomAccessFile)     (DJI djmd motion)
@@ -31,7 +32,8 @@ compatible APIs), so the same code can move into workers.
 | `channels.ts` | Canonical channel ids (speed, yawRate, lateralAccel, …) with display units, plus name heuristics for unknown loggers. |
 | `series.ts` | `Series` (typed arrays), building from rows (sort, drop invalid, last duplicate wins), interpolation. |
 | `gps.ts` | Lat/lon → local east/north metres, single-point projection, and a north-up fit into a box. |
-| `import.ts` | `importTelemetry` / `importParsed`: one shared time base, each mapped column converted to base units, one column per canonical channel, warnings. |
+| `import.ts` | `importTelemetry` / `importParsed`: one shared time base, each mapped column converted to base units, one column per canonical channel, warnings. `importXrk` builds the same `TelemetrySession` from an XRK file, with each channel at its own rate. |
+| `xrk.ts` | AiM `.xrk` reader (and `.xrz`, zlib-compressed XRK). A port of the reverse-engineered format in [libxrk](https://github.com/m3rlin45/libxrk) (MIT; see `THIRD-PARTY-NOTICES.md`). Reads channel and group definitions, `(G`/`(S`/`(M` data messages, u-blox GPS fixes (ECEF → lat/lon, speed, heading), lap markers and session strings. Expansion-device `(c` messages aren't decoded; their bytes are counted in `skippedBytes` and reported as a warning. |
 
 ### Logger profiles (`src/core/data/profiles/`)
 
@@ -43,6 +45,13 @@ where are the laps (`laps`, optional).
 | --- | --- | --- |
 | `solostorm` | `GPS_TIME (ms)` + `SYSTEM_TIME (ms)` headers | Unix ms on the GPS scale. Units from header suffixes. Laps from `MATH_LAP_NUMBER`. `ACCEL_X` is lateral. |
 | `aim` | `Format` metadata, GPS headers, or preamble + units row | Relative seconds. Units from the units row. Laps from `Beacon Markers`. |
+
+XRK files don't go through the registry: their channels are named and
+typed, so `importXrk` maps them with `xrkCanonical` in `profiles/aim.ts`
+(the logger's own names such as `YawRate` and `ECU_OIL_T`, then the CSV
+names). Laps come from the logger's LAP markers. There is no mapping screen
+for them, and no UTC start (the file's date and time are the logger's local
+clock).
 | user (`user.ts`) | All saved match headers present | A confirmed mapping saved as JSON (`UserProfileDefinition`). |
 | `generic` | Fallback | Guesses time column, unit, clock, channel roles, and units the header omits (rpm, degrees; g vs m/s² by magnitude). Seeds the mapping screen. |
 

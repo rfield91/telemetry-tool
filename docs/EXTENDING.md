@@ -19,6 +19,10 @@ guesses the columns, the mapping screen lets the user correct them, and the
 result is saved as a user profile (`UserProfileDefinition`). From then on,
 files with the same headers are recognised automatically.
 
+Binary formats are a separate path: AiM `.xrk` files are read by
+`src/core/data/xrk.ts` and turned into a session by `importXrk`, without a
+profile. A new binary format would follow that shape.
+
 A built-in profile is worth writing when a logger:
 - is common enough to ship;
 - needs logic that a column mapping can't express, such as an unusual clock,

@@ -1,4 +1,5 @@
-import { importTelemetry } from '../core/data/import'
+import { importTelemetry, importXrk, type TelemetrySession } from '../core/data/import'
+import { inflateXrz } from '../core/data/xrk'
 import type { UserProfileDefinition } from '../core/data/profiles/user'
 import { probeVideo } from '../core/media/probe'
 import type { ProjectState } from '../core/project/store'
@@ -89,12 +90,21 @@ export async function openTelemetry(path?: string) {
   const picked = path ?? (await pickFile('csv'))
   if (!picked) return
   await withBusy('Importing telemetry…', async () => {
-    const text = await host.readText(picked)
-    const session = importTelemetry(text, baseName(picked), runtimeStore.getState().registry)
+    let session: TelemetrySession
+    let text: string | null = null
+    if (XRK_EXTENSIONS.test(picked)) {
+      const file = await host.openRandomAccess(picked)
+      const [bytes] = await file.readRanges([{ offset: 0, length: file.size }])
+      session = importXrk(await inflateXrz(bytes!), baseName(picked))
+    } else {
+      text = await host.readText(picked)
+      session = importTelemetry(text, baseName(picked), runtimeStore.getState().registry)
+    }
     const id = crypto.randomUUID()
     runtimeStore.setState((s) => ({
       sessions: { ...s.sessions, [id]: session },
-      csvText: { ...s.csvText, [id]: text },
+      // Only CSVs have a column mapping to revisit.
+      csvText: text === null ? s.csvText : { ...s.csvText, [id]: text },
       syncRun: { status: 'idle' },
       // Unknown loggers go straight to the mapping screen.
       mappingFor: session.profileId === 'generic' ? id : s.mappingFor,
@@ -211,14 +221,15 @@ export async function applyMapping(telemetryId: string, definition: UserProfileD
 }
 
 const VIDEO_EXTENSIONS = /\.(mp4|mov|m4v)$/i
+const XRK_EXTENSIONS = /\.(xrk|xrz)$/i
 
-/** Route dropped files: videos to the video slot, CSVs to telemetry. */
+/** Route dropped files: videos to the video slot, CSV/XRK logger files to telemetry. */
 export async function openDroppedFiles(files: File[]) {
   for (const file of files) {
     const isVideo = VIDEO_EXTENSIONS.test(file.name)
-    const isCsv = /\.csv$/i.test(file.name)
-    if (!isVideo && !isCsv) {
-      runtimeStore.setState({ error: `${file.name} isn't a video (MP4/MOV) or CSV file.` })
+    const isData = /\.csv$/i.test(file.name) || XRK_EXTENSIONS.test(file.name)
+    if (!isVideo && !isData) {
+      runtimeStore.setState({ error: `${file.name} isn't a video (MP4/MOV) or logger file (CSV/XRK).` })
       continue
     }
     const path = await host.pathForDroppedFile(file)

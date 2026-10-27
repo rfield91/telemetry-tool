@@ -101,7 +101,7 @@ function browserHost(): FileHost {
     async pickFile(kind) {
       let path: string | null
       try {
-        path = window.prompt(kind === 'video' ? 'Absolute path to a video file' : 'Absolute path to a CSV file')
+        path = window.prompt(kind === 'video' ? 'Absolute path to a video file' : 'Absolute path to a CSV or XRK file')
       } catch {
         // Some embedded browsers block prompt().
         throw new Error('Open files with ?video=<path>&csv=<path> in the browser harness, or use the desktop app.')

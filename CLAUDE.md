@@ -52,8 +52,8 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - `src/core/`: framework-free logic (no React; canvas code is
   OffscreenCanvas-compatible), unit tested:
   - `data/`: CSV parsing, timestamps and clocks, units, canonical channels,
-    series, GPS projection, logger profiles (`profiles/`), and `import.ts`
-    (CSV → `TelemetrySession`).
+    series, GPS projection, logger profiles (`profiles/`), the AiM XRK
+    reader (`xrk.ts`), and `import.ts` (CSV or XRK → `TelemetrySession`).
   - `laps/`: lap model from logger markers, delta to best lap.
   - `media/`: MP4 reader, protobuf decoding, camera adapters (`cameras/`,
     DJI so far), `probeVideo`.
@@ -72,7 +72,9 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - `sample-data/3.csv`: AiM session (4 laps). `sample-data/solostorm/`: two
   Solostorm single-lap exports that match the DJI videos used in the spikes.
   `svt-canaan-session.csv` is the full 12-lap session trimmed to the columns
-  sync and laps use. `sample-data/media/`: a tiny H.264/AAC MP4 and 240 real DJI `djmd` packets
+  sync and laps use. `sample-data/xrk/`: the XRK behind `3.csv`, trimmed to
+  its configuration, the first ~35 s of data, the lap markers and session
+  strings (base64). `sample-data/media/`: a tiny H.264/AAC MP4 and 240 real DJI `djmd` packets
   (base64). `sample-data/sync/`: camera yaw (50 Hz, int16) extracted from the
   NER and SVT DJI videos, pinning the auto-sync results in tests.
 - `spike/`: throwaway benchmarks and sync experiments (CommonJS/ESM scripts,

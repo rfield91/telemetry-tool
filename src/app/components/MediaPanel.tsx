@@ -125,8 +125,10 @@ function VideoSource() {
 function DataSource() {
   const { session, telemetryId } = useActivePair()
   const name = useProject((s) => s.project.telemetry[0]?.name)
+  // XRK files have named, typed channels, so only CSVs get the mapping screen.
+  const isCsv = useRuntime((s) => telemetryId !== undefined && telemetryId in s.csvText)
   if (!session || !telemetryId || !name) {
-    return <AddSource icon={Table2} title="Add data" hint="Logger CSV: AiM, Solostorm, or any time-stamped CSV" onClick={() => void openTelemetry()} />
+    return <AddSource icon={Table2} title="Add data" hint="AiM XRK, or a CSV from AiM, Solostorm or any logger" onClick={() => void openTelemetry()} />
   }
   const openColumns = () => runtimeStore.setState({ mappingFor: telemetryId })
   const mapped = session.channels.filter((c) => c.canonical)
@@ -137,12 +139,14 @@ function DataSource() {
       summary={`${session.profileLabel} · ${formatClock(session.duration).replace(/\.\d+$/, '')}`}
       actions={
         <>
-          <IconButton icon={SlidersHorizontal} size="sm" label="Columns and units" onClick={openColumns} />
+          {isCsv && <IconButton icon={SlidersHorizontal} size="sm" label="Columns and units" onClick={openColumns} />}
           <IconButton icon={RefreshCw} size="sm" label="Replace data" onClick={() => void openTelemetry()} />
         </>
       }
       status={
-        session.warnings.length > 0 ? (
+        session.warnings.length > 0 && !isCsv ? (
+          <StatusLine tone="warn">{session.warnings.join('; ')}</StatusLine>
+        ) : session.warnings.length > 0 ? (
           <button type="button" onClick={openColumns} className="flex items-center gap-2 text-warn hover:underline">
             <TriangleAlert size={13} aria-hidden />
             {session.warnings.length} column {session.warnings.length === 1 ? 'needs' : 'need'} checking

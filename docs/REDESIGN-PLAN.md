@@ -393,6 +393,12 @@ GoPro footage yet).**
   menu opens the folder and shows the version.
 - **First run:** the start screen adds a three-step outline (sync, lay out,
   export) under the Add buttons.
+- **AiM XRK files** (added 2026-10-27): the binary logs load directly,
+  without a Race Studio CSV export. Checked against `sample-data/3.csv`, the
+  CSV export of the same session: same time zero, GPS speed within
+  3 mm/s RMS, identical positions and ECU values. The XRK has the logger's
+  50 Hz gyro (`YawRate`), which correlates with the CSV's `GPS Gyro` at
+  r = 0.95 with the same sign. Expansion-device data isn't decoded yet.
 - **Guide:** `docs/EXTENDING.md` covers adding a logger profile
   (Solostorm) or a camera adapter (DJI), with fixtures, tests and a
   checklist.

@@ -45,7 +45,7 @@ protocol.registerSchemesAsPrivileged([
 
 const FILE_FILTERS = {
   video: [{ name: 'Videos', extensions: ['mp4', 'mov', 'MP4', 'MOV'] }],
-  csv: [{ name: 'CSV files', extensions: ['csv'] }],
+  csv: [{ name: 'Logger data (CSV, AiM XRK)', extensions: ['csv', 'xrk', 'xrz'] }],
 }
 
 /**
@@ -171,7 +171,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('file:pick', async (_event, kind: keyof typeof FILE_FILTERS) => {
     const result = await dialog.showOpenDialog({
-      title: kind === 'video' ? 'Open video' : 'Open telemetry CSV',
+      title: kind === 'video' ? 'Open video' : 'Open logger data',
       filters: FILE_FILTERS[kind],
       properties: ['openFile'],
     })

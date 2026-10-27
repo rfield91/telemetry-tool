@@ -205,7 +205,7 @@ function EmptyState() {
             <Table2 size={20} className="text-accent" aria-hidden />
             <span>
               <span className="mt-0 block font-medium text-fg">Add data</span>
-              <span className="mt-0.5 block text-xs text-fg-subtle">AiM, Solostorm or any CSV with a time column</span>
+              <span className="mt-0.5 block text-xs text-fg-subtle">AiM XRK, or a CSV from AiM, Solostorm or any logger</span>
             </span>
           </button>
         </div>
