@@ -25,6 +25,16 @@ export const SYNC_HZ = 50
 const MAX_GAP = 0.5
 /** Shortest logger recording worth fitting clock drift on (s). */
 const MIN_DRIFT_SPAN = 120
+/** Overlap needed when one recording contains the other (a lap in a video, a video in a session). */
+const CONTAINED_OVERLAP = 0.8
+/**
+ * Recordings needn't contain one another: a camera started minutes before
+ * the logger and stopped minutes before it overlaps it for only part of
+ * each. That search accepts a smaller overlap, with an absolute floor so a
+ * few seconds of overlap can't win by chance.
+ */
+const PARTIAL_OVERLAP = 0.3
+const MIN_OVERLAP_SECONDS = 30
 
 export interface Signal {
   /** Seconds, ascending. */
@@ -61,7 +71,12 @@ export interface SyncResult {
 }
 
 export interface SyncOptions {
-  /** Minimum overlap as a fraction of the shorter signal's valid samples. */
+  /**
+   * Minimum overlap as a fraction of the shorter signal's valid samples,
+   * never less than 30 s unless a signal is shorter. By default both 0.8
+   * (one recording contains the other) and 0.3 (they partly overlap) are
+   * tried, and the more confident result wins.
+   */
   minOverlapFraction?: number
   /** Peaks closer than this (s) are merged; default 5 s. */
   minPeakSpacing?: number
@@ -208,13 +223,33 @@ function standardDeviation(values: Float64Array, start: number, end: number): nu
   return n > 1 ? Math.sqrt(Math.max(0, sumSq / n - (sum / n) ** 2)) : 0
 }
 
+const CONFIDENCE_RANK: Record<SyncConfidence, number> = { low: 0, medium: 1, high: 2 }
+
 export function synchronize(loggerSignal: Signal, cameraSignal: Signal, options: SyncOptions = {}): SyncResult | null {
+  if (options.minOverlapFraction !== undefined) return synchronizeOnce(loggerSignal, cameraSignal, options)
+  // Search both ways. When one recording contains the other, the contained
+  // search is the stronger evidence (short partial overlaps make runner-up
+  // peaks look better than they are). When they only partly overlap, the
+  // contained search can't reach the true offset and settles on a wrong
+  // lap, which the partial search beats on confidence.
+  const contained = synchronizeOnce(loggerSignal, cameraSignal, { ...options, minOverlapFraction: CONTAINED_OVERLAP })
+  const partial = synchronizeOnce(loggerSignal, cameraSignal, { ...options, minOverlapFraction: PARTIAL_OVERLAP })
+  if (!partial || !contained) return contained ?? partial
+  const rank = CONFIDENCE_RANK[partial.confidence] - CONFIDENCE_RANK[contained.confidence]
+  if (rank !== 0) return rank > 0 ? partial : contained
+  return Math.abs(partial.correlation) > Math.abs(contained.correlation) + 0.05 ? partial : contained
+}
+
+function synchronizeOnce(loggerSignal: Signal, cameraSignal: Signal, options: SyncOptions): SyncResult | null {
   const logger = clipSpikes(resample(loggerSignal))
   const camera = clipSpikes(resample(cameraSignal))
   const loggerValid = validCount(logger)
   if (loggerValid < SYNC_HZ * 5 || validCount(camera) < SYNC_HZ * 5) return null
   const n = logger.length
-  const minOverlap = Math.floor(Math.min(loggerValid, validCount(camera)) * (options.minOverlapFraction ?? 0.8))
+  const shorter = Math.min(loggerValid, validCount(camera))
+  const minOverlap = Math.floor(
+    Math.min(shorter, Math.max(MIN_OVERLAP_SECONDS * SYNC_HZ, shorter * (options.minOverlapFraction ?? CONTAINED_OVERLAP))),
+  )
   const r = correlationByLag(logger, camera, minOverlap)
 
   // Axis conventions differ between loggers and cameras: take the sign of

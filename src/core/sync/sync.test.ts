@@ -113,6 +113,36 @@ describe('synchronize (real sessions)', () => {
     expect(result.confidence).toBe('high')
   })
 
+  it('syncs recordings that only partly overlap', () => {
+    // As when the camera starts minutes after the logger and the logger
+    // stops before the camera does: neither recording contains the other.
+    const session = importTelemetry(svtSessionCsv, 'svt-session.csv')
+    const logger = loggerYaw(session)!.signal
+    const camera = cameraYaw(svtYawBase64, svtYawMeta)
+    const full = synchronize(logger, camera)!
+    const crop = (signal: Signal, keep: (t: number) => boolean, shift = 0): Signal => {
+      const times: number[] = []
+      const values: number[] = []
+      for (let i = 0; i < signal.times.length; i += 1) {
+        if (!keep(signal.times[i]!)) continue
+        times.push(signal.times[i]! - shift)
+        values.push(signal.values[i]!)
+      }
+      return { times, values }
+    }
+    for (const [cameraStart, loggerEnd] of [[300, 600], [400, 700]] as const) {
+      const lateCamera = crop(camera, (t) => t >= cameraStart, cameraStart)
+      const earlyLogger = crop(logger, (t) => full.offset + t < loggerEnd)
+      const result = synchronize(earlyLogger, lateCamera)!
+      expect(Math.abs(result.offset - (full.offset - cameraStart))).toBeLessThan(0.02)
+      expect(result.confidence).toBe('high')
+      // Requiring the near-complete overlap of contained recordings finds a
+      // wrong lap here.
+      const containedOnly = synchronize(earlyLogger, lateCamera, { minOverlapFraction: 0.8 })!
+      expect(Math.abs(containedOnly.offset - result.offset)).toBeGreaterThan(60)
+    }
+  })
+
   it('ignores a stretch of bad camera data', () => {
     const session = importTelemetry(nerCsv, 'ner.csv')
     const camera = cameraYaw(nerYawBase64, nerYawMeta)

@@ -399,6 +399,12 @@ GoPro footage yet).**
   3 mm/s RMS, identical positions and ECU values. The XRK has the logger's
   50 Hz gyro (`YawRate`), which correlates with the CSV's `GPS Gyro` at
   r = 0.95 with the same sign. Expansion-device data isn't decoded yet.
+- **Partly overlapping recordings** (2026-10-27): the Thompson DJI video
+  starts ~9 minutes before the logger and stops ~9 minutes before it, so
+  they overlap for about half of each. Auto-sync used to require 80% overlap
+  and found nothing. It now also searches with 30% (at least 30 s) and keeps
+  the more confident result: offset 539.264 s, match 0.99, ±6 ms, 82 ppm
+  drift, and every timed lap lands on the driving part of the video.
 - **Guide:** `docs/EXTENDING.md` covers adding a logger profile
   (Solostorm) or a camera adapter (DJI), with fixtures, tests and a
   checklist.
