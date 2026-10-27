@@ -1,4 +1,4 @@
-import { Download, LoaderCircle, Redo2, Undo2, Upload, X } from 'lucide-react'
+import { CircleHelp, Download, FileText, LoaderCircle, Redo2, Undo2, Upload, X } from 'lucide-react'
 import { useEffect, useState, type DragEvent } from 'react'
 import { dismissError, loadUserProfiles, openDroppedFiles, openTelemetry, openVideo, setOffset, toggleLapSelection } from './app/actions'
 import { ExportDialog } from './app/components/ExportDialog'
@@ -8,7 +8,8 @@ import { MappingDialog } from './app/components/MappingDialog'
 import { MediaPanel } from './app/components/MediaPanel'
 import { Stage } from './app/components/Stage'
 import { Transport } from './app/components/Transport'
-import { Button, IconButton } from './app/components/ui'
+import { Button, IconButton, MenuItem, MenuLabel, MenuSeparator, Popover } from './app/components/ui'
+import { host } from './app/host'
 import { deleteSelection, duplicateSelection, loadTemplates, nudgeSelection, select, selectAll } from './app/layout'
 import { player } from './app/player'
 import { projectStore, runtimeStore, useProject, useRuntime } from './app/state'
@@ -156,7 +157,7 @@ function Header() {
       <div className="flex min-w-0 items-center gap-2.5">
         <svg viewBox="0 0 24 24" className="size-5 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
           <path d="M4.5 16.5a8 8 0 1 1 15 0" />
-          <path d="m12 13.5 4.5-4.5" />
+          <path d="m12 13.5 3.6-3.6" />
         </svg>
         <span className="font-semibold">Telemetry Overlay</span>
         <span className="text-fg-subtle">/</span>
@@ -169,6 +170,7 @@ function Header() {
         )}
       </div>
       <div className="flex items-center gap-0.5">
+        <HelpMenu />
         <IconButton icon={Undo2} label={undo ? `Undo ${undo} (Ctrl+Z)` : 'Nothing to undo'} disabled={!undo} onClick={() => projectStore.getState().undo()} />
         <IconButton icon={Redo2} label={redo ? `Redo ${redo} (Ctrl+Y)` : 'Nothing to redo'} disabled={!redo} onClick={() => projectStore.getState().redo()} />
         <Button variant="primary" icon={Download} className="ml-2" disabled={!hasVideo} title={hasVideo ? 'Export the video with the overlay' : 'Add a video to export'} onClick={openExportDialog}>
@@ -176,6 +178,35 @@ function Header() {
         </Button>
       </div>
     </header>
+  )
+}
+
+function HelpMenu() {
+  return (
+    <Popover
+      className="w-60"
+      trigger={({ toggle, open }) => <IconButton icon={CircleHelp} label="Help" active={open} onClick={toggle} />}
+    >
+      {(close) => (
+        <>
+          <MenuItem
+            icon={FileText}
+            disabled={host.kind !== 'electron'}
+            onClick={() => {
+              void host.revealLogs()
+              close()
+            }}
+          >
+            Open log folder
+          </MenuItem>
+          <p className="px-2 pb-1.5 text-[11px] leading-relaxed text-fg-subtle">
+            If something goes wrong, send the log file from this folder along with what you were doing.
+          </p>
+          <MenuSeparator />
+          <MenuLabel>Telemetry Overlay {__APP_VERSION__}</MenuLabel>
+        </>
+      )}
+    </Popover>
   )
 }
 

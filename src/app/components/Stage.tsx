@@ -188,7 +188,7 @@ function EmptyState() {
     'flex flex-1 flex-col items-start gap-3 rounded-lg border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong hover:bg-raised'
   return (
     <div className="absolute inset-0 grid place-items-center p-8">
-      <div className="w-full max-w-xl">
+      <div className="w-full max-w-2xl">
         <h2 className="text-lg font-semibold text-fg">Start with your footage and data</h2>
         <p className="mt-1 text-fg-muted">
           Add an in-car video and the logger file from the same session. You can also drop files anywhere in the window.
@@ -209,7 +209,24 @@ function EmptyState() {
             </span>
           </button>
         </div>
+        <ol className="mt-8 grid grid-cols-3 gap-6 border-t border-line pt-5">
+          {FIRST_STEPS.map(([title, text], i) => (
+            <li key={title}>
+              <p className="flex items-center gap-2 text-[13px] font-medium text-fg">
+                <span className="grid size-5 place-items-center rounded-full bg-raised font-mono text-[11px] text-fg-muted">{i + 1}</span>
+                {title}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-fg-subtle">{text}</p>
+            </li>
+          ))}
+        </ol>
       </div>
     </div>
   )
 }
+
+const FIRST_STEPS: Array<[string, string]> = [
+  ['Sync', 'Video and data line up automatically from the camera’s motion (DJI Osmo Action), or set the offset by hand.'],
+  ['Lay out', 'A starting overlay is added for you. Drag, resize and restyle widgets, or apply a saved template.'],
+  ['Export', 'Pick laps or the whole session and export an MP4 with the overlay and the camera’s sound.'],
+]

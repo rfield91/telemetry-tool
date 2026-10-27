@@ -366,6 +366,40 @@ checked yet.**
 - A short "adding a camera / logger" guide, using the DJI adapter and the
   Solostorm profile as worked examples.
 
+**Status (2026-10-26): installer, first run, error reporting and the guide
+are done. GoPro, chapters, rotation/HDR and other GPUs are deferred (no
+GoPro footage yet).**
+- **Installer:** `npm run dist` builds a 100 MB NSIS installer. The app
+  itself is an 880 KB `app.asar`; the rest is Electron.
+  - All npm packages became dev dependencies, because Vite bundles
+    everything the app uses. This drops about 80 MB of ffmpeg from the
+    install.
+  - Assisted setup with a chosen folder, Start menu and desktop shortcuts.
+  - A generated app icon (`npm run icon`, `scripts/make-icon.mjs`).
+  - Electron is copied from `node_modules` (`electronDist`), because
+    extracting its zip failed when Windows held the fresh files.
+  - The packaged exe passes `--smoke-test`: the UI renders, the preload
+    API is present, and there are no console errors under the CSP. The
+    installer itself hasn't been run.
+- **Security:** the built page has a Content-Security-Policy (build only,
+  since dev needs inline scripts). A lap export under it still runs on
+  WebGPU at 4.8x real time.
+- **Error reporting:** `userData/logs/telemetry-overlay.log` (rotated at
+  2 MB) records:
+  - the app, Electron, Windows and GPU versions;
+  - uncaught main and renderer errors, and renderer/GPU process crashes;
+  - every error the UI shows, and export results.
+  A crashed window offers Reload or "Open log folder". The header's help
+  menu opens the folder and shows the version.
+- **First run:** the start screen adds a three-step outline (sync, lay out,
+  export) under the Add buttons.
+- **Guide:** `docs/EXTENDING.md` covers adding a logger profile
+  (Solostorm) or a camera adapter (DJI), with fixtures, tests and a
+  checklist.
+- Full-window screenshots of the start screen, editor and export dialog
+  were captured from Electron (`--smoke-test --screenshot=…`). They
+  caught the toggle switches' knob drawing outside the track, now fixed.
+
 ## Performance budgets
 
 | Operation | Target (RTX 3070 Ti class) |

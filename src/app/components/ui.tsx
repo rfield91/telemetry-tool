@@ -310,7 +310,7 @@ export function Switch({ checked, onChange, id, label }: { checked: boolean; onC
       onClick={() => onChange(!checked)}
       className={`relative h-4 w-7 rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-line-strong'}`}
     >
-      <span className={`absolute top-0.5 size-3 rounded-full bg-fg transition-transform ${checked ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+      <span className={`absolute top-0.5 left-0 size-3 rounded-full bg-fg transition-transform ${checked ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
     </button>
   )
 }

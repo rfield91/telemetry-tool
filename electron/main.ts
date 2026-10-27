@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -15,6 +16,7 @@ import {
   writeOutput,
   type ByteRange,
 } from './files.js'
+import { initLog, logDirectory, writeLog } from './log.js'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.join(currentDir, '..')
@@ -28,6 +30,10 @@ async function readJsonList(file: string): Promise<unknown> {
     return []
   }
 }
+
+const describeError = (error: unknown) => (error instanceof Error ? (error.stack ?? error.message) : String(error))
+process.on('uncaughtException', (error) => writeLog('error', `main: ${describeError(error)}`))
+process.on('unhandledRejection', (error) => writeLog('error', `main (promise): ${describeError(error)}`))
 
 // Hardware HEVC encoding through WebCodecs (export) is behind a feature flag.
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCEncoderSupport')
@@ -55,6 +61,35 @@ function autotestQuery(): Record<string, string> | null {
   return Object.fromEntries(Object.entries(job).filter(([, value]) => typeof value === 'string'))
 }
 
+/**
+ * `--smoke-test` (also in packaged builds): load the UI, print whether it
+ * rendered plus any console errors (CSP violations, failed imports), quit.
+ * `--screenshot=<file.png>` also saves the window. Dev builds also take
+ * `--smoke-wait=<ms>` and `--smoke-eval=<js>` (run before the screenshot).
+ */
+function runSmokeTest(window: BrowserWindow) {
+  const errors: string[] = []
+  window.webContents.on('console-message', (event) => {
+    if (event.level === 'error') errors.push(event.message)
+  })
+  const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
+  const wait = app.isPackaged ? 1500 : Number(arg('smoke-wait') ?? 1500)
+  const script = app.isPackaged ? undefined : arg('smoke-eval')
+  window.webContents.once('did-finish-load', () => {
+    setTimeout(async () => {
+      if (script) await window.webContents.executeJavaScript(script).catch((error: unknown) => errors.push(String(error)))
+      void window.webContents
+        .executeJavaScript(`({ header: !!document.querySelector('header'), exportButton: [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Export'), api: !!window.telemetryOverlay, csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content ?? null })`)
+        .then(async (result: unknown) => {
+          const screenshot = arg('screenshot')
+          if (screenshot) await writeFile(screenshot, (await window.webContents.capturePage()).toPNG())
+          console.log(`SMOKE_RESULT ${JSON.stringify({ ...(result as object), version: app.getVersion(), packaged: app.isPackaged, errors })}`)
+          app.quit()
+        })
+    }, wait)
+  })
+}
+
 function createWindow() {
   const query = autotestQuery()
   const window = new BrowserWindow({
@@ -62,7 +97,7 @@ function createWindow() {
     height: 920,
     minWidth: 1080,
     minHeight: 700,
-    backgroundColor: '#070b12',
+    backgroundColor: '#0c0c0d',
     title: 'Telemetry Overlay',
     webPreferences: {
       contextIsolation: true,
@@ -71,6 +106,27 @@ function createWindow() {
     },
   })
 
+  window.webContents.on('render-process-gone', (_event, details) => {
+    writeLog('error', `renderer gone: ${details.reason} (exit code ${details.exitCode})`)
+    if (query || details.reason === 'clean-exit') return
+    void dialog
+      .showMessageBox(window, {
+        type: 'error',
+        title: 'Telemetry Overlay',
+        message: 'The app stopped unexpectedly.',
+        detail: 'Unsaved changes may be lost. The details are in the log file.',
+        buttons: ['Reload', 'Open log folder', 'Close'],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 0) window.reload()
+        else if (response === 1) void shell.openPath(logDirectory() ?? '')
+        else window.close()
+      })
+  })
+
+  if (process.argv.includes('--smoke-test')) runSmokeTest(window)
+
   if (query) {
     window.webContents.on('console-message', (event) => {
       if (event.level === 'warning' || event.level === 'error') console.log(`[renderer ${event.level}] ${event.message}`)
@@ -78,8 +134,6 @@ function createWindow() {
       console.log(event.message)
       app.quit()
     })
-    window.webContents.on('render-process-gone', (_event, details) => console.log(`[renderer gone] ${JSON.stringify(details)}`))
-    app.on('child-process-gone', (_event, details) => console.log(`[child process gone] ${JSON.stringify(details)}`))
   }
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL
@@ -91,6 +145,24 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initLog(app.getPath('userData'), `Telemetry Overlay ${app.getVersion()}, Electron ${process.versions.electron}, Windows ${os.release()}`)
+  app.on('child-process-gone', (_event, details) => {
+    if (details.reason !== 'clean-exit') writeLog('error', `${details.type} process gone: ${details.reason} (exit code ${details.exitCode})`)
+  })
+  void app.getGPUInfo('basic').then(
+    (info) => {
+      const devices = (info as { gpuDevice?: Array<{ deviceString?: string; driverVersion?: string }> }).gpuDevice ?? []
+      const names = devices
+        .filter((d) => d.deviceString && !d.deviceString.includes('Basic Render'))
+        .map((d) => `${d.deviceString} (driver ${d.driverVersion})`)
+      writeLog('info', `GPU: ${[...new Set(names)].join(', ') || 'unknown'}`)
+    },
+    () => undefined,
+  )
+  ipcMain.handle('log:write', (_event, level: 'info' | 'warn' | 'error', message: string) =>
+    writeLog(level, `renderer: ${String(message).slice(0, 20_000)}`),
+  )
+  ipcMain.handle('log:reveal', () => shell.openPath(logDirectory() ?? ''))
   protocol.handle('media', (request) => {
     const url = new URL(request.url)
     const filePath = decodeURIComponent(url.pathname.slice(1))

@@ -5,7 +5,8 @@ an all-in-one tool: import in-car video and racecar logger CSVs, auto-sync
 them, lay out an overlay, and export a composited MP4.
 
 Follow `docs/REDESIGN-PLAN.md` (milestones M0–M5 and scope decisions).
-`docs/ARCHITECTURE.md` describes the current code. The spikes in
+`docs/ARCHITECTURE.md` describes the current code. `docs/EXTENDING.md` is
+the guide to adding a logger profile or camera adapter. The spikes in
 `spike/export-speed` and `spike/auto-sync` hold the measured results the plan
 builds on. The old prototype is at git tag `prototype-v0`.
 
@@ -25,13 +26,21 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - `npm run typecheck`: `tsc -b` over `tsconfig.app.json` (src) and
   `tsconfig.node.json` (electron, dev/, vite config).
 - `npm run lint`: oxlint (also covers `spike/`).
-- `npm run dist`: Windows NSIS installer into `release/`.
+- `npm run dist`: Windows NSIS installer into `release/`. Check it with
+  `"release/win-unpacked/Telemetry Overlay.exe" --smoke-test` (prints
+  `SMOKE_RESULT`; add `--screenshot=<png>` to capture the window, and in dev
+  builds `--smoke-wait=<ms>` / `--smoke-eval=<js>`). `npx electron .
+  --smoke-test …` does the same on the unpacked build after `npm run build`.
+- `npm run icon`: regenerate `build/icon.png`.
+- All npm packages are dev dependencies: Vite bundles everything the app
+  uses, so nothing ships in `node_modules`. Keep it that way.
 
 ## Layout
 
 - `electron/`: main process (window, `media://` streaming protocol, file,
   export-output and profile IPC with picked-file and save-path allowlists
-  in `files.ts`) and preload.
+  in `files.ts`, the log file in `log.ts`, crash handling, smoke test) and
+  preload.
 - `dev/fileServer.ts`: dev-only Vite middleware mirroring the file IPC.
 - `src/App.tsx` + `src/app/`: the React UI. `state.ts` (undoable project
   store + runtime store), `actions.ts`, `host.ts` (Electron vs browser file
@@ -109,8 +118,9 @@ builds on. The old prototype is at git tag `prototype-v0`.
 
 On branch `redesign`: M0 (foundation) and M1 (import and preview) are
 implemented, M2 (auto-sync) is done except image-motion sync and lap
-thumbnails, M3 (layout editor) is done except overlay fonts, and M4
-(export) is done: the full 16.5-minute DJI session exports at 5.2x real
+thumbnails, M3 (layout editor) is done except overlay fonts, M4
+(export) is done, and M5 has the installer, error log, first run and
+extension guide (GoPro, chapters, rotation/HDR deferred). M4: the full 16.5-minute DJI session exports at 5.2x real
 time in Electron (via the autotest hook). Tests, typecheck, lint and build
 pass. Playback of exports in other players and editors hasn't been checked
 yet. `dist/`, `dist-electron/` and `release/` are build output and are

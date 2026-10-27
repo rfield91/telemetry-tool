@@ -1,4 +1,7 @@
 declare global {
+  /** package.json version, defined by Vite. */
+  const __APP_VERSION__: string
+
   interface TelemetryOverlayApi {
     pickFile(kind: 'video' | 'csv'): Promise<string | null>
     pathForDroppedFile(file: File): Promise<string | null>
@@ -11,6 +14,8 @@ declare global {
     finishOutput(id: number): Promise<void>
     abortOutput(id: number): Promise<void>
     revealFile(path: string): Promise<void>
+    writeLog(level: 'info' | 'warn' | 'error', message: string): Promise<void>
+    revealLogs(): Promise<string>
     loadProfiles(): Promise<unknown>
     saveProfiles(profiles: unknown): Promise<void>
     loadTemplates(): Promise<unknown>

@@ -22,6 +22,10 @@ export interface FileHost {
   openOutput(path: string): Promise<OutputFile>
   /** Show a saved export in Explorer. */
   revealFile(path: string): Promise<void>
+  /** Append to the app's log file (desktop app; the console in the browser harness). */
+  log(level: 'info' | 'warn' | 'error', message: string): void
+  /** Open the folder holding the log file; false where there isn't one. */
+  revealLogs(): Promise<boolean>
   loadProfiles(): Promise<UserProfileDefinition[]>
   saveProfiles(profiles: UserProfileDefinition[]): Promise<void>
   loadTemplates(): Promise<LayoutTemplate[]>
@@ -80,6 +84,8 @@ function electronHost(api: TelemetryOverlayApi): FileHost {
       }
     },
     revealFile: (path) => api.revealFile(path),
+    log: (level, message) => void api.writeLog(level, message).catch(() => undefined),
+    revealLogs: async () => (await api.revealLogs()) === '',
     loadProfiles: async () => validProfiles(await api.loadProfiles()),
     saveProfiles: (profiles) => api.saveProfiles(profiles),
     loadTemplates: async () => validTemplates(await api.loadTemplates()),
@@ -151,6 +157,8 @@ function browserHost(): FileHost {
       }
     },
     revealFile: async () => {},
+    log: (level, message) => console[level](`[log] ${message}`),
+    revealLogs: async () => false,
     loadProfiles: async () => validProfiles(loadLocal(PROFILES_KEY)),
     saveProfiles: async (profiles) => saveLocal(PROFILES_KEY, profiles),
     loadTemplates: async () => validTemplates(loadLocal(TEMPLATES_KEY)),

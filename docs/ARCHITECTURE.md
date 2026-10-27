@@ -217,6 +217,18 @@ deletes, Ctrl+D duplicates, Esc clears; Ctrl+A selects all.
 - The renderer may only read files the user picked, and write only export
   paths chosen in the save dialog (allowlists in `files.ts`).
 - `PlatformHEVCEncoderSupport` is enabled for WebCodecs HEVC encoding.
+- `electron/log.ts` writes `userData/logs/telemetry-overlay.log` (rotated
+  at 2 MB). It records versions and GPU at start, uncaught main-process
+  errors, renderer and GPU process crashes, and renderer messages sent
+  over `log:write`. `src/app/logging.ts` forwards uncaught renderer errors
+  and every error the UI shows. A crashed renderer gets a Reload / Open log
+  folder dialog.
+- The built page carries a Content-Security-Policy (added by a build-only
+  Vite plugin): scripts from the app only, inline blob workers, video from
+  `media://`.
+- `--smoke-test` (also in packaged builds) loads the UI, prints
+  `SMOKE_RESULT` with any console errors and quits. `--screenshot=<png>`
+  saves the window. Dev builds also take `--smoke-wait` and `--smoke-eval`.
 - Dev only: `TELEMETRY_OVERLAY_AUTOTEST='{"video":…,"csv":…,"export":…,"laps":"3"}'`
   opens the files, exports, prints the `EXPORT_RESULT` line and quits
   (ignored in packaged builds). The browser harness takes the same keys as
