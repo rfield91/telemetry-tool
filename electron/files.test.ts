@@ -1,10 +1,11 @@
 // @vitest-environment node
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { allowFile, fileSize, readRanges, serveFile } from './files.js'
+import { abortOutput, allowFile, allowWrite, fileSize, finishOutput, openOutput, readRanges, serveFile, writeOutput } from './files.js'
 
 let dir = ''
 let file = ''
@@ -58,5 +59,33 @@ describe('file access', () => {
     const whole = await serveFile(file, null)
     expect(whole.status).toBe(200)
     expect((await whole.arrayBuffer()).byteLength).toBe(1000)
+  })
+})
+
+describe('export output', () => {
+  it('only writes paths chosen in a save dialog', async () => {
+    await expect(openOutput(path.join(dir, 'sneaky.mp4'))).rejects.toThrow(/denied/)
+  })
+
+  it('writes to a .part file and renames it when finished', async () => {
+    const target = path.join(dir, 'out.mp4')
+    allowWrite(target)
+    const id = await openOutput(target)
+    await writeOutput(id, 4, Uint8Array.of(5, 6))
+    await writeOutput(id, 0, Uint8Array.of(1, 2, 3, 4))
+    expect(existsSync(`${target}.part`)).toBe(true)
+    await finishOutput(id)
+    expect(existsSync(`${target}.part`)).toBe(false)
+    expect([...(await readFile(target))]).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  it('deletes the partial file when aborted', async () => {
+    const target = path.join(dir, 'cancelled.mp4')
+    allowWrite(target)
+    const id = await openOutput(target)
+    await writeOutput(id, 0, Uint8Array.of(1))
+    await abortOutput(id)
+    expect(existsSync(`${target}.part`)).toBe(false)
+    expect(existsSync(target)).toBe(false)
   })
 })

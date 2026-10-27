@@ -6,6 +6,7 @@ import { ProfileRegistry } from '../core/data/profiles/registry'
 import type { VideoProbe } from '../core/media/probe'
 import { createProjectStore, type ProjectState } from '../core/project/store'
 import type { Series } from '../core/data/series'
+import type { ExportProgress, ExportStats } from '../core/export/pipeline'
 import type { LayoutTemplate } from '../core/layout/templates'
 import type { SyncRunOutput } from './sync/protocol'
 
@@ -45,7 +46,16 @@ export interface RuntimeState {
   /** Saved layout templates. */
   templates: LayoutTemplate[]
   inspectorTab: 'sync' | 'layout'
+  exportOpen: boolean
+  exportRun: ExportRun
 }
+
+export type ExportRun =
+  | { status: 'idle' }
+  | { status: 'running'; outputPath: string; progress: ExportProgress | null }
+  | { status: 'done'; outputPath: string; stats: ExportStats }
+  | { status: 'error'; message: string }
+  | { status: 'cancelled' }
 
 export type SyncRun =
   | { status: 'idle' }
@@ -75,6 +85,8 @@ export const runtimeStore = createStore<RuntimeState>()(() => ({
   selection: [],
   templates: [],
   inspectorTab: 'sync',
+  exportOpen: false,
+  exportRun: { status: 'idle' },
 }))
 
 export function useRuntime<T>(selector: (state: RuntimeState) => T): T {

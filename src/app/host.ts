@@ -16,10 +16,24 @@ export interface FileHost {
   openRandomAccess(path: string): Promise<RandomAccessFile>
   /** URL a <video> element can stream (with range requests). */
   mediaUrl(path: string): string
+  /** Where to save an export; null if the user cancels. */
+  pickSavePath(defaultPath: string): Promise<string | null>
+  /** Open an export output (written to `<path>.part` until finished). */
+  openOutput(path: string): Promise<OutputFile>
+  /** Show a saved export in Explorer. */
+  revealFile(path: string): Promise<void>
   loadProfiles(): Promise<UserProfileDefinition[]>
   saveProfiles(profiles: UserProfileDefinition[]): Promise<void>
   loadTemplates(): Promise<LayoutTemplate[]>
   saveTemplates(templates: LayoutTemplate[]): Promise<void>
+}
+
+export interface OutputFile {
+  write(position: number, bytes: Uint8Array): Promise<void>
+  /** Close and move the file into place. */
+  finish(): Promise<void>
+  /** Close and delete the partial file. */
+  abort(): Promise<void>
 }
 
 const PROFILES_KEY = 'telemetry-overlay.logger-profiles'
@@ -56,6 +70,16 @@ function electronHost(api: TelemetryOverlayApi): FileHost {
       return { size, readRanges: (ranges: ByteRange[]) => api.readRanges(path, ranges) }
     },
     mediaUrl: (path) => `media://local/${encodeURIComponent(path)}`,
+    pickSavePath: (defaultPath) => api.pickSavePath(defaultPath),
+    async openOutput(path) {
+      const id = await api.openOutput(path)
+      return {
+        write: (position, bytes) => api.writeOutput(id, position, bytes),
+        finish: () => api.finishOutput(id),
+        abort: () => api.abortOutput(id),
+      }
+    },
+    revealFile: (path) => api.revealFile(path),
     loadProfiles: async () => validProfiles(await api.loadProfiles()),
     saveProfiles: (profiles) => api.saveProfiles(profiles),
     loadTemplates: async () => validTemplates(await api.loadTemplates()),
@@ -105,6 +129,28 @@ function browserHost(): FileHost {
       }
     },
     mediaUrl: (path) => endpoint('file', path),
+    // Dev harness only: no save dialog, so exports go to the suggested path.
+    pickSavePath: async (defaultPath) => defaultPath,
+    async openOutput(path) {
+      const post = async (url: string, body?: BodyInit) => {
+        const response = await fetch(url, { method: 'POST', body })
+        if (!response.ok) throw new Error(await response.text())
+        return response.text()
+      }
+      const id = await post(`/__dev/output/open?path=${encodeURIComponent(path)}`)
+      return {
+        write: async (position, bytes) => {
+          await post(`/__dev/output/write?id=${id}&position=${position}`, bytes as Uint8Array<ArrayBuffer>)
+        },
+        finish: async () => {
+          await post(`/__dev/output/finish?id=${id}`)
+        },
+        abort: async () => {
+          await post(`/__dev/output/abort?id=${id}`)
+        },
+      }
+    },
+    revealFile: async () => {},
     loadProfiles: async () => validProfiles(loadLocal(PROFILES_KEY)),
     saveProfiles: async (profiles) => saveLocal(PROFILES_KEY, profiles),
     loadTemplates: async () => validTemplates(loadLocal(TEMPLATES_KEY)),

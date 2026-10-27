@@ -319,6 +319,39 @@ not yet timed by a person.**
 **Done when** the full DJI session exports with overlay and audio at ≥3x
 real time, and the output plays in common players and editors.
 
+**Status (2026-10-26): done; playback in other players and editors not
+checked yet.**
+- The full SVT Canaan session (DJI Osmo Action 4, 8.8 GB, 2688×1512 10-bit
+  HEVC, 16:29) exported in the Electron app with the 10-widget layout and
+  audio in **191 s: 5.2x real time (306 fps)**. That's HEVC at 29.2 Mb/s
+  with the WebGPU compositor, measured on an RTX 3070 Ti. The run was
+  repeated with byte-identical output, and memory stayed flat at about
+  2.1 GB.
+- Output checks with ffprobe and ffmpeg:
+  - all 58,300 source frames are kept with their original timing (the
+    camera dropped some, so the average is 58.92 fps);
+  - AAC audio has the same length;
+  - a full decode is error-free;
+  - the container has a BT.709 `colr` box.
+- Frames checked at 0:28 into lap 37 and at 14:30 (in-lap, after the
+  camera's dropped frames) match the car's dash display.
+- Lap export: lap 37 plus 2 s either side came out as 3946 frames and
+  65.8 s, with the lap timer at 0:28.0 and delta +0.00 on the best lap.
+- Export runs in a worker in the main window, not a separate window, so
+  the spike's GPU-window teardown problem doesn't arise. Two exports in a
+  row both used WebGPU and produced identical files.
+- The Canvas 2D fallback (H.264) produced the same lap. Cancelling deletes
+  the `.part` file.
+- **Open:**
+  - One early run exited at about 94% with no error output, leaving the
+    `.part` file. This was before crash logging was added to the autotest
+    hook; the next two runs were clean. Watch for it.
+  - Check that the output plays in VLC, Windows Media Player, Premiere and
+    DaVinci Resolve.
+  - Exports per lap as separate files; non-lap trim points.
+  - HEVC's in-stream color info is unspecified (only the container is
+    tagged).
+
 ### M5 — Breadth and polish
 
 - **GoPro camera adapter:** GPMF gyro and accelerometer for sync; GPS with

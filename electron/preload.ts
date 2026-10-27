@@ -21,6 +21,13 @@ const api = {
   readRanges: (path: string, ranges: ByteRange[]) =>
     ipcRenderer.invoke('file:readRanges', path, ranges) as Promise<Uint8Array[]>,
   readText: (path: string) => ipcRenderer.invoke('file:readText', path) as Promise<string>,
+  pickSavePath: (defaultPath: string) => ipcRenderer.invoke('file:pickSave', defaultPath) as Promise<string | null>,
+  openOutput: (path: string) => ipcRenderer.invoke('file:openOutput', path) as Promise<number>,
+  writeOutput: (id: number, position: number, bytes: Uint8Array) =>
+    ipcRenderer.invoke('file:writeOutput', id, position, bytes) as Promise<void>,
+  finishOutput: (id: number) => ipcRenderer.invoke('file:finishOutput', id) as Promise<void>,
+  abortOutput: (id: number) => ipcRenderer.invoke('file:abortOutput', id) as Promise<void>,
+  revealFile: (path: string) => ipcRenderer.invoke('file:reveal', path) as Promise<void>,
   loadProfiles: () => ipcRenderer.invoke('profiles:load') as Promise<unknown>,
   saveProfiles: (profiles: unknown) => ipcRenderer.invoke('profiles:save', profiles) as Promise<void>,
   loadTemplates: () => ipcRenderer.invoke('templates:load') as Promise<unknown>,

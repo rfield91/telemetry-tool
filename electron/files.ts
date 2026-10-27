@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs'
-import { open, stat, type FileHandle } from 'node:fs/promises'
+import { open, rename, stat, unlink, type FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 
@@ -98,4 +98,61 @@ export async function serveFile(filePath: string, rangeHeader: string | null): P
       'Accept-Ranges': 'bytes',
     },
   })
+}
+
+/**
+ * Export output. The renderer may only write paths the user chose in a save
+ * dialog. Data goes to `<path>.part`, renamed into place when the export
+ * finishes and deleted if it's cancelled or fails.
+ */
+const writable = new Set<string>()
+const outputs = new Map<number, { handle: FileHandle; path: string }>()
+let nextOutput = 1
+
+export function allowWrite(filePath: string) {
+  writable.add(key(filePath))
+}
+
+export function isWritable(filePath: string) {
+  return writable.has(key(filePath))
+}
+
+const partPath = (filePath: string) => `${filePath}.part`
+
+export async function openOutput(filePath: string): Promise<number> {
+  if (!writable.has(key(filePath))) throw new Error('Write denied: choose the output file through the app first.')
+  const handle = await open(partPath(filePath), 'w')
+  const id = nextOutput++
+  outputs.set(id, { handle, path: filePath })
+  return id
+}
+
+function output(id: number) {
+  const entry = outputs.get(id)
+  if (!entry) throw new Error('Output file is not open')
+  return entry
+}
+
+export async function writeOutput(id: number, position: number, bytes: Uint8Array) {
+  const { handle } = output(id)
+  let written = 0
+  while (written < bytes.byteLength) {
+    const result = await handle.write(bytes, written, bytes.byteLength - written, position + written)
+    written += result.bytesWritten
+  }
+}
+
+export async function finishOutput(id: number) {
+  const entry = output(id)
+  outputs.delete(id)
+  await entry.handle.close()
+  await rename(partPath(entry.path), entry.path)
+}
+
+export async function abortOutput(id: number) {
+  const entry = outputs.get(id)
+  if (!entry) return
+  outputs.delete(id)
+  await entry.handle.close().catch(() => undefined)
+  await unlink(partPath(entry.path)).catch(() => undefined)
 }

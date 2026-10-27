@@ -1,21 +1,25 @@
-import { LoaderCircle, Redo2, Undo2, Upload, X } from 'lucide-react'
+import { Download, LoaderCircle, Redo2, Undo2, Upload, X } from 'lucide-react'
 import { useEffect, useState, type DragEvent } from 'react'
-import { dismissError, loadUserProfiles, openDroppedFiles, openTelemetry, openVideo, setOffset } from './app/actions'
+import { dismissError, loadUserProfiles, openDroppedFiles, openTelemetry, openVideo, setOffset, toggleLapSelection } from './app/actions'
+import { ExportDialog } from './app/components/ExportDialog'
+import { openExportDialog, startExport } from './app/exporting'
 import { InspectorPanel } from './app/components/InspectorPanel'
 import { MappingDialog } from './app/components/MappingDialog'
 import { MediaPanel } from './app/components/MediaPanel'
 import { Stage } from './app/components/Stage'
 import { Transport } from './app/components/Transport'
-import { IconButton } from './app/components/ui'
-import { host } from './app/host'
+import { Button, IconButton } from './app/components/ui'
 import { deleteSelection, duplicateSelection, loadTemplates, nudgeSelection, select, selectAll } from './app/layout'
 import { player } from './app/player'
 import { projectStore, runtimeStore, useProject, useRuntime } from './app/state'
 import { redoLabel, undoLabel } from './core/project/store'
 
-/** Dev harness: `?video=<path>&csv=<path>&offset=<s>` loads files in a plain browser. */
+/**
+ * Dev harness: `?video=<path>&csv=<path>&offset=<s>` loads files without
+ * dialogs. `laps=5,7` ticks laps; `export=<path>` then exports there (after
+ * auto-sync) and logs `EXPORT_RESULT <json>` to the console.
+ */
 async function loadFromQuery() {
-  if (host.kind !== 'browser') return
   const params = new URLSearchParams(window.location.search)
   const video = params.get('video')
   const csv = params.get('csv')
@@ -23,6 +27,12 @@ async function loadFromQuery() {
   if (csv) await openTelemetry(csv)
   const offset = Number(params.get('offset'))
   if (params.has('offset') && Number.isFinite(offset)) setOffset(offset)
+  for (const lap of params.get('laps')?.split(',').map(Number) ?? []) if (Number.isFinite(lap)) toggleLapSelection(lap)
+  const output = params.get('export')
+  if (!output) return
+  while (runtimeStore.getState().syncRun.status === 'running') await new Promise((resolve) => setTimeout(resolve, 200))
+  await startExport(output)
+  console.log(`EXPORT_RESULT ${JSON.stringify(runtimeStore.getState().exportRun)}`)
 }
 
 function isTyping(target: EventTarget | null) {
@@ -120,6 +130,7 @@ export default function App() {
         <InspectorPanel />
       </div>
       <MappingDialog />
+      <ExportDialog />
       <ErrorToast />
       {dragging && (
         <div className="pointer-events-none fixed inset-3 z-30 grid place-items-center rounded-xl border-2 border-dashed border-accent bg-canvas/80">
@@ -139,6 +150,7 @@ function Header() {
   const projectName = useProject((s) => s.project.name)
   const undo = useProject(undoLabel)
   const redo = useProject(redoLabel)
+  const hasVideo = useProject((s) => s.project.videos.length > 0)
   return (
     <header className="flex items-center justify-between gap-4 border-b border-line bg-surface px-3">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -159,6 +171,9 @@ function Header() {
       <div className="flex items-center gap-0.5">
         <IconButton icon={Undo2} label={undo ? `Undo ${undo} (Ctrl+Z)` : 'Nothing to undo'} disabled={!undo} onClick={() => projectStore.getState().undo()} />
         <IconButton icon={Redo2} label={redo ? `Redo ${redo} (Ctrl+Y)` : 'Nothing to redo'} disabled={!redo} onClick={() => projectStore.getState().redo()} />
+        <Button variant="primary" icon={Download} className="ml-2" disabled={!hasVideo} title={hasVideo ? 'Export the video with the overlay' : 'Add a video to export'} onClick={openExportDialog}>
+          Export
+        </Button>
       </div>
     </header>
   )

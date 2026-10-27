@@ -14,7 +14,10 @@ builds on. The old prototype is at git tag `prototype-v0`.
 - `npm run dev`: Vite + Electron in dev mode.
 - `npm run dev:browser`: the renderer alone on http://localhost:5199 (no
   Electron), using dev-server file endpoints. Load files with
-  `?video=<abs path>&csv=<abs path>&offset=<s>`. `.claude/launch.json` runs
+  `?video=<abs path>&csv=<abs path>&offset=<s>`; add `laps=3` and
+  `export=<abs path>` to run an export (logs `EXPORT_RESULT`). For the real
+  app, `npm run build` then run `npx electron .` with
+  `TELEMETRY_OVERLAY_AUTOTEST` set to the same keys as JSON. `.claude/launch.json` runs
   it for the built-in browser preview.
 - `npm test`: Vitest (jsdom). Tests import real fixtures from `sample-data/`
   with Vite `?raw` imports (binary fixtures are base64 `.b64` text).
@@ -26,15 +29,17 @@ builds on. The old prototype is at git tag `prototype-v0`.
 
 ## Layout
 
-- `electron/`: main process (window, `media://` streaming protocol, file and
-  profile IPC with a picked-files allowlist in `files.ts`) and preload.
+- `electron/`: main process (window, `media://` streaming protocol, file,
+  export-output and profile IPC with picked-file and save-path allowlists
+  in `files.ts`) and preload.
 - `dev/fileServer.ts`: dev-only Vite middleware mirroring the file IPC.
 - `src/App.tsx` + `src/app/`: the React UI. `state.ts` (undoable project
   store + runtime store), `actions.ts`, `host.ts` (Electron vs browser file
   access), `player.ts` (playback clock), `layout.ts` (layout edits and
-  templates), `sync/` (worker + client), `components/` (Stage,
+  templates), `exporting.ts` (export plan and run), `sync/` and `export/`
+  (workers + clients), `components/` (Stage,
   LayoutEditor, Transport, MediaPanel, InspectorPanel, LayoutPanel,
-  ChannelPicker, MappingDialog, ui primitives).
+  ChannelPicker, MappingDialog, ExportDialog, ui primitives).
 - `src/core/`: framework-free logic (no React; canvas code is
   OffscreenCanvas-compatible), unit tested:
   - `data/`: CSV parsing, timestamps and clocks, units, canonical channels,
@@ -48,6 +53,9 @@ builds on. The old prototype is at git tag `prototype-v0`.
   - `widgets/`: widget definitions (with their editable `styleFields`),
     binding/units (`data.ts`), default layout, and `OverlayRenderer`
     (cached static layers).
+  - `export/`: export planning (segments, sizes, bitrate, atlas), the
+    WebGPU and Canvas 2D compositors, and the mediabunny/WebCodecs
+    pipeline.
   - `layout/`: editor geometry (snapping, move, resize) and layout
     templates bound to canonical channels.
   - `project/`: project schema, save/load validation, Zustand store with
@@ -101,7 +109,9 @@ builds on. The old prototype is at git tag `prototype-v0`.
 
 On branch `redesign`: M0 (foundation) and M1 (import and preview) are
 implemented, M2 (auto-sync) is done except image-motion sync and lap
-thumbnails, and M3 (layout editor) is done except overlay fonts. Tests, typecheck, lint and build pass. M1 was verified in the
-browser harness. The Electron window itself hasn't been exercised by an
-automated check yet. `dist/`, `dist-electron/` and `release/` are build output and are
+thumbnails, M3 (layout editor) is done except overlay fonts, and M4
+(export) is done: the full 16.5-minute DJI session exports at 5.2x real
+time in Electron (via the autotest hook). Tests, typecheck, lint and build
+pass. Playback of exports in other players and editors hasn't been checked
+yet. `dist/`, `dist-electron/` and `release/` are build output and are
 gitignored.

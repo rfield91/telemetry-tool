@@ -1,6 +1,6 @@
 # Architecture
 
-Current state of the rebuild (milestones M0–M3 of `docs/REDESIGN-PLAN.md`).
+Current state of the rebuild (milestones M0–M4 of `docs/REDESIGN-PLAN.md`).
 The original prototype (SVG gauges, transparent WebM export) is preserved at
 git tag `prototype-v0`.
 
@@ -130,6 +130,35 @@ channels present.
 | `geometry.ts` | Frame-fraction geometry: snap targets (frame edges, centre, 2% safe margin, other widgets' edges and centres), `moveRect` and `resizeRect` with snapping and guides, aspect-locked corner resize, typed resizes around the centre, hit testing. |
 | `templates.ts` | `LayoutTemplate`: a saved layout with canonical bindings (raw column bindings are converted when the column is recognised), applied to any session with fresh ids and a list of channels it lacks. |
 
+## Export (`src/core/export/`, `src/app/export/`)
+
+```
+mediabunny demux ─► VideoDecoder (hardware) ─► compositor ─► VideoEncoder (hardware) ─► mediabunny MP4 mux ─► <path>.part ─► rename
+      └─ AAC packets copied through, with timestamps rebased per segment ──────────────────┘
+```
+
+| File | Responsibility |
+| --- | --- |
+| `plan.ts` | Pure planning: segments from the selected laps plus lead-in/out (video time via the sync, merged where they overlap; whole video when none are selected), output size (NV12-friendly), standard sizes below the source, automatic bitrate (0.12 bits/pixel/frame HEVC, 0.18 H.264), atlas packing, ETA. |
+| `compositor.ts` | `createWebGpuCompositor`: the decoded frame is a zero-copy external texture; each widget is drawn into its own slot of a small overlay atlas; one pass composites, scales to the output size and packs BT.709 limited-range NV12, read back asynchronously (3 in flight). `createCanvasCompositor`: Canvas 2D fallback (`drawImage` + overlay, encoder converts). |
+| `pipeline.ts` | `runExport(job, {signal, onProgress})`: per segment, decode from the keyframe before its start (plus 0.5 s past its end for reordered frames), drop frames outside it, composite with the overlay at that frame's data time, encode (keyframe every 2 s) and mux. Picks the requested codec, falling back to the other one. Audio packets are interleaved as video advances. Cancels with `ExportCancelled`. File I/O is injected (`RandomAccessFile` in, `WriteTarget` out). |
+
+`OverlayRenderer.render` takes an optional `place` callback so export can
+draw each widget at its atlas slot (clipped to its box) with the same widget
+code as the preview.
+
+In the app, `app/export/worker.ts` runs `runExport` in a dedicated worker
+(WebCodecs, WebGPU and OffscreenCanvas all work there), so no extra window
+is created. The spike found that destroying a GPU window broke later ones.
+`app/export/client.ts` answers the worker's reads and writes through
+`FileHost`. `app/exporting.ts` builds the plan from the project and runs
+it, and `components/ExportDialog.tsx` shows settings, progress (fps, real
+time factor, ETA, cancel) and the result.
+
+Output is written to `<path>.part` and renamed when the export finishes,
+or deleted on cancel or failure. In Electron only paths chosen in the save
+dialog are writable (`allowWrite` in `files.ts`).
+
 ## App (`src/app/`, `src/App.tsx`)
 
 - `state.ts` has two stores:
@@ -180,12 +209,18 @@ deletes, Ctrl+D duplicates, Esc clears; Ctrl+A selects all.
 
 - `electron/main.ts` registers the privileged `media://` scheme (served by
   `electron/files.ts` with HTTP range support) and IPC for:
-  - picking files
+  - picking files and choosing export paths
+  - writing export output (`.part` file, rename or delete)
   - file size, batched range reads and text reads
   - logger profiles and layout templates, stored in
     `userData/logger-profiles.json` and `userData/layout-templates.json`
-- The renderer may only read files the user picked (an allowlist in
-  `files.ts`).
+- The renderer may only read files the user picked, and write only export
+  paths chosen in the save dialog (allowlists in `files.ts`).
+- `PlatformHEVCEncoderSupport` is enabled for WebCodecs HEVC encoding.
+- Dev only: `TELEMETRY_OVERLAY_AUTOTEST='{"video":…,"csv":…,"export":…,"laps":"3"}'`
+  opens the files, exports, prints the `EXPORT_RESULT` line and quits
+  (ignored in packaged builds). The browser harness takes the same keys as
+  query parameters.
 - `dev/fileServer.ts` is a Vite dev-server middleware (`apply: 'serve'`,
   loopback only) providing the same operations, so `npm run dev:browser`
   runs the UI in a normal browser. `?video=…&csv=…&offset=…` loads files

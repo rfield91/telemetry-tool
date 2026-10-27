@@ -76,12 +76,17 @@ export class OverlayRenderer {
     return entry
   }
 
+  /**
+   * `place` moves a widget away from its frame position (export draws each
+   * widget into its own atlas slot); placed widgets are clipped to their box.
+   */
   render(
     ctx: Ctx2D,
     frame: { width: number; height: number },
-    widgets: WidgetInstance[],
+    widgets: readonly WidgetInstance[],
     session: TelemetrySession | null,
     time: number,
+    place?: (widget: WidgetInstance) => { x: number; y: number } | undefined,
   ) {
     const started = performance.now()
     const live = new Set<string>()
@@ -106,9 +111,17 @@ export class OverlayRenderer {
         this.layers.set(widget.id, layer)
       }
 
-      ctx.drawImage(layer.canvas as CanvasImageSource, box.x, box.y)
+      const at = place?.(widget)
+      const x = at?.x ?? box.x
+      const y = at?.y ?? box.y
+      ctx.drawImage(layer.canvas as CanvasImageSource, x, y)
       ctx.save()
-      ctx.translate(box.x, box.y)
+      ctx.translate(x, y)
+      if (at) {
+        ctx.beginPath()
+        ctx.rect(0, 0, size.width, size.height)
+        ctx.clip()
+      }
       definition.drawDynamic(ctx, size, widget.style, data, layer.prepared)
       ctx.restore()
     }

@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs'
-import { open, stat } from 'node:fs/promises'
+import { open, rename, stat, unlink, type FileHandle } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 
@@ -11,6 +11,10 @@ import type { Plugin } from 'vite'
  *   GET  /__dev/file?path=…    file with HTTP range support
  *   GET  /__dev/size?path=…    file size in bytes
  *   POST /__dev/ranges?path=…  body [{offset,length}] → bytes concatenated
+ *   POST /__dev/output/open?path=…              → output id (writes <path>.part)
+ *   POST /__dev/output/write?id=…&position=…    body: raw bytes
+ *   POST /__dev/output/finish?id=…              renames <path>.part to <path>
+ *   POST /__dev/output/abort?id=…               deletes <path>.part
  */
 export function devFileServer(): Plugin {
   return {
@@ -29,10 +33,43 @@ export function devFileServer(): Plugin {
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
-async function readBody(req: IncomingMessage): Promise<string> {
+async function readBytes(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = []
   for await (const chunk of req) chunks.push(chunk as Buffer)
-  return Buffer.concat(chunks).toString('utf8')
+  return Buffer.concat(chunks)
+}
+
+const readBody = async (req: IncomingMessage) => (await readBytes(req)).toString('utf8')
+
+const outputs = new Map<number, { handle: FileHandle; path: string }>()
+let nextOutput = 1
+
+async function handleOutput(url: URL, req: IncomingMessage, res: ServerResponse) {
+  const action = url.pathname.slice('/output/'.length)
+  if (action === 'open') {
+    const filePath = url.searchParams.get('path')
+    if (!filePath) throw new Error('path is required')
+    const id = nextOutput++
+    outputs.set(id, { handle: await open(`${filePath}.part`, 'w'), path: filePath })
+    res.end(String(id))
+    return
+  }
+  const id = Number(url.searchParams.get('id'))
+  const entry = outputs.get(id)
+  if (!entry) throw new Error('Output file is not open')
+  if (action === 'write') {
+    const bytes = await readBytes(req)
+    await entry.handle.write(bytes, 0, bytes.byteLength, Number(url.searchParams.get('position')))
+  } else if (action === 'finish') {
+    outputs.delete(id)
+    await entry.handle.close()
+    await rename(`${entry.path}.part`, entry.path)
+  } else if (action === 'abort') {
+    outputs.delete(id)
+    await entry.handle.close().catch(() => undefined)
+    await unlink(`${entry.path}.part`).catch(() => undefined)
+  }
+  res.end()
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
@@ -42,6 +79,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return
   }
   const url = new URL(req.url ?? '/', 'http://localhost')
+  if (url.pathname.startsWith('/output/') && req.method === 'POST') {
+    await handleOutput(url, req, res)
+    return
+  }
   const filePath = url.searchParams.get('path')
   if (!filePath) {
     res.statusCode = 400
