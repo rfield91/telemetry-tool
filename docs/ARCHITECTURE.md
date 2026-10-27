@@ -1,138 +1,248 @@
 # Architecture
 
-Telemetry Overlay turns a racecar data-logger CSV into a transparent VP9/WebM
-video of gauges that can be composited over onboard footage. One set of React
-SVG components renders both the interactive preview and every exported frame.
+Current state of the rebuild (milestones M0–M4 of `docs/REDESIGN-PLAN.md`).
+The original prototype (SVG gauges, transparent WebM export) is preserved at
+git tag `prototype-v0`.
+
+## Overview
 
 ```
-CSV file ──► parseCsv ──► detectCsvFormat ──► preset / fallback overlays
-                                                     │
-                     OverlayConfig[] (column-based, editable in App.tsx)
-                                                     │  buildSeries / buildGpsTrack
-                                                     ▼
-                     per-overlay SeriesPoint[] / GpsPoint[] (time 0-based, seconds)
-                          │                                   │
-                  live preview (App.tsx)            OverlayDefinition (points baked in)
-                                                              │  IPC export:start
-                                                              ▼
-                                   main process: offscreen BrowserWindow (?export=1)
-                                   ─► OverlayFrame at t ─► paint BGRA ─► raw chunk
-                                   ─► ffmpeg VP9 yuva420p per chunk ─► concat ─► .webm
+                    ┌──────────── src/core (framework-free, testable) ────────────┐
+CSV text ──► data/  parseCsv → ProfileRegistry → importParsed → TelemetrySession
+XRK bytes ─► data/  parseXrk (binary AiM log) ──────► importXrk ──┘
+                                                                (base units, laps)
+MP4 file ──► media/ readMp4 (sample tables) → camera adapters → VideoProbe
+                    (byte ranges via RandomAccessFile)     (DJI djmd motion)
+Layout   ──► widgets/ OverlayRenderer: cached static layers + per-frame dynamic
+                    └──────────────────────────────────────────────────────────────┘
+src/app (React UI) ── host.ts ──► Electron IPC + media:// │ dev-server endpoints
+Project (.json) ◄── project/ schema + Zustand store with undo/redo
 ```
 
-## Processes
+`src/core/` is plain TypeScript (canvas drawing uses OffscreenCanvas-
+compatible APIs), so the same code can move into workers.
 
-### Electron main (`electron/`)
-
-- `main.ts` creates the editor window (`contextIsolation: true`,
-  `nodeIntegration: false`) and registers IPC handlers:
-  - `csv:open` — native open dialog, returns `{ name, text }`.
-  - `export:choose-path` — save dialog for the `.webm`.
-  - `export:start` — runs `exportOverlayVideo`, streaming `export:progress`.
-  - `export:cancel` — flags the job and kills FFmpeg.
-- `preload.ts` exposes these as `window.telemetryOverlay` (typed in
-  `src/types/electron.d.ts`).
-- `exportVideo.ts` is the frame-accurate renderer/encoder (see below).
-- `vp9AlphaArgs.ts` holds the shared FFmpeg output flags (`libvpx-vp9`,
-  `yuva420p`, `alpha_mode=1`, no audio). `exportVideo.test.ts` encodes a few
-  synthetic frames with these flags and checks alpha survives via ffprobe.
-
-### Renderer (`src/`)
-
-`src/main.tsx` has two modes chosen by the URL:
-
-- **Editor** (default): mounts `App.tsx`.
-- **Export renderer** (`?export=1`): transparent page that mounts
-  `ExportRenderer`, which exposes two globals driven by the main process:
-  - `window.setExportOverlay({ width, height, overlay })`
-  - `window.renderOverlayFrame(time)` — `flushSync` render, then waits two
-    animation frames so the paint reflects that time.
-
-## Data pipeline (`src/renderer/lib/`)
+## Telemetry import (`src/core/data/`)
 
 | File | Responsibility |
 | --- | --- |
-| `telemetry.ts` | `parseCsv` (Papa Parse) finds the main numeric data block, walks back to the header row, detects an optional units row below it and key/value metadata rows above it (AiM preamble). `buildSeries` / `buildGpsTrack` pick columns, skip invalid rows (recorded in `errors`), infer timestamp unit, sort, dedupe (last wins) and shift so the first sample is t=0. `sampleAt` linearly interpolates with clamping. |
-| `csvFormats.ts` | `CsvFormatProfile` registry (`aim`, `generic`). A profile detects itself, says which columns to avoid as the default value channel, and resolves GPS and g-meter column pairs. Add new loggers here, before Generic. |
-| `overlayConfig.ts` | Editor-side overlay model: `gauge`, `bar`, `key-value`, `track-map`, `g-meter`. These reference **CSV column names**; positions are fractions of the frame (`x`,`y` centre, `size` relative to frame height). |
-| `overlayPresets.ts` | Preset JSON schema (`version: 1`), `applyOverlayPreset` (resolves `$primary`, recomputes ranges from data, drops items whose columns are missing), `serializeOverlayPreset` (not yet wired to any UI). |
-| `gauge.ts`, `gMeter.ts`, `trackMap.ts` | Pure math for components: value→fraction, `samplePoints` interpolation, g-range rounding, GPS equirectangular projection and trail paths, AiM column-name constants. |
+| `csv.ts` | Papa Parse wrapper that finds the real header row under logger preambles, an optional units row, and key/value metadata. `splitHeaderUnit` reads `NAME (unit)` headers. |
+| `time.ts` | Timestamp units (s/ms/µs, auto-inferred from spacing) and clocks: `relative`, `unix-utc`, `unix-gps` (GPS time = UTC + 18 s). |
+| `units.ts` | Unit table with aliases, base units per quantity, and conversion (incl. °F/°C offsets). |
+| `channels.ts` | Canonical channel ids (speed, yawRate, lateralAccel, …) with display units, plus name heuristics for unknown loggers. |
+| `series.ts` | `Series` (typed arrays), building from rows (sort, drop invalid, last duplicate wins), interpolation. |
+| `gps.ts` | Lat/lon → local east/north metres, single-point projection, and a north-up fit into a box. |
+| `import.ts` | `importTelemetry` / `importParsed`: one shared time base, each mapped column converted to base units, one column per canonical channel, warnings. `importXrk` builds the same `TelemetrySession` from an XRK file, with each channel at its own rate. |
+| `xrk.ts` | AiM `.xrk` reader (and `.xrz`, zlib-compressed XRK). A port of the reverse-engineered format in [libxrk](https://github.com/m3rlin45/libxrk) (MIT; see `THIRD-PARTY-NOTICES.md`). Reads channel and group definitions, `(G`/`(S`/`(M` data messages, u-blox GPS fixes (ECEF → lat/lon, speed, heading), lap markers and session strings. Expansion-device `(c` messages aren't decoded; their bytes are counted in `skippedBytes` and reported as a warning. |
 
-Bundled presets live in `src/renderer/presets/*.json` and are registered in
-`presets/index.ts`. `aim-default.json` is the default layout for AiM files
-(speed gauge, TPS bar, oil/coolant key-value, track map, g-meter).
+### Logger profiles (`src/core/data/profiles/`)
 
-## Overlay components (`src/renderer/components/`)
+A `LoggerProfile` answers four questions about a CSV: is it mine
+(`detect`), where is time (`time`), which columns mean what (`channels`), and
+where are the laps (`laps`, optional).
 
-All are pure SVG components with a fixed `viewBox`, scaling to their
-container. They take already-sampled values (plus `points`/`time` for
-`TrackMap`).
-
-| Component | Shape | viewBox |
+| Profile | Detection | Notes |
 | --- | --- | --- |
-| `Gauge` | 240° dial, label/unit/value | 320×320 |
-| `Bar` | vertical pedal bar (throttle/brake) | 120×320 |
-| `KeyValue` | stacked numeric readouts, vertical or horizontal | dynamic (`keyValueViewBox`) |
-| `TrackMap` | GPS path with trail and live marker | 320×320 |
-| `GMeter` | friction circle with ±maxG rings | 320×320 |
+| `solostorm` | `GPS_TIME (ms)` + `SYSTEM_TIME (ms)` headers | Unix ms on the GPS scale. Units from header suffixes. Laps from `MATH_LAP_NUMBER`. `ACCEL_X` is lateral. |
+| `aim` | `Format` metadata, GPS headers, or preamble + units row | Relative seconds. Units from the units row. Laps from `Beacon Markers`. |
 
-`src/renderer/export/OverlayFrame.tsx` positions components on an absolute
-`width×height` transparent frame. Its `OverlayDefinition` types carry the
-pre-built point arrays, not column names, so the export renderer never sees the
-CSV.
+XRK files don't go through the registry: their channels are named and
+typed, so `importXrk` maps them with `xrkCanonical` in `profiles/aim.ts`
+(the logger's own names such as `YawRate` and `ECU_OIL_T`, then the CSV
+names). Laps come from the logger's LAP markers. There is no mapping screen
+for them, and no UTC start (the file's date and time are the logger's local
+clock).
+| user (`user.ts`) | All saved match headers present | A confirmed mapping saved as JSON (`UserProfileDefinition`). |
+| `generic` | Fallback | Guesses time column, unit, clock, channel roles, and units the header omits (rpm, degrees; g vs m/s² by magnitude). Seeds the mapping screen. |
 
-## Editor (`src/App.tsx`)
+`ProfileRegistry` tries user profiles first, then built-ins with high
+confidence, then low-confidence matches, then generic.
 
-A single large component (~2.3k lines) holding all state: parsed CSV, format,
-timestamp column/unit, `OverlayConfig[]`, selection, playback time, trim
-in/out, output size/fps and export progress. It:
+## Laps (`src/core/laps/laps.ts`)
 
-1. Loads a CSV (Electron dialog, or a hidden `<input type=file>` when running
-   in a plain browser), detects the format, applies the default preset or
-   builds fallback overlays (`configureDataset`).
-2. Memoises series per overlay (`valueSeries`, `trackSeries`, `gMeterSeries`;
-   key-value entries are keyed by entry id).
-3. Renders the left sidebar (data mapping, format/preset pickers, overlay list
-   and per-overlay editors with `LayoutSliders`) and the checkerboard preview.
-4. Plays back with `requestAnimationFrame` between trim points.
-5. On export, converts previewable overlays into `OverlayComponentDefinition`s
-   and calls `window.telemetryOverlay.startExport`.
+`Lap` has a 1-based session `index`, the logger's `loggerNumber` when
+available, start/end in session seconds and a `kind`. With more than one lap
+the first is `out` and the last `in`; a single segment is `timed`.
+GPS start/finish-line detection is planned, not built.
 
-## Export pipeline (`electron/exportVideo.ts`)
+`delta.ts` builds the delta-to-best model: speed integrated into distance,
+the best lap's elapsed time by distance, and each lap scaled to the best
+lap's length so slightly different lines compare point for point.
 
-1. Validate the request (size ≥ 64 px, 1–120 fps, duration ≤ 24 h, every
-   component has points).
-2. Create a hidden **offscreen** transparent `BrowserWindow` at the exact
-   output size, load the app with `?export=1`, wait for the globals, call
-   `setExportOverlay`.
-3. For each frame `t = startTime + frame / fps`: call `renderOverlayFrame(t)`,
-   `invalidate()`, take the next `paint` event's `NativeImage` and append its
-   BGRA bitmap to a raw temp file.
-4. Every 300 frames (`FRAMES_PER_CHUNK`) encode the raw chunk with FFmpeg to a
-   VP9-alpha WebM segment and delete the raw file. The render window is
-   recreated every 150 frames to release Chromium paint buffers.
-5. Concatenate segments (`-f concat -c copy`) to the chosen path. Rendering is
-   92% of reported progress; concat is the rest.
-6. On failure/cancel the partial output and temp dir are removed.
+## Media (`src/core/media/`)
 
-FFmpeg comes from `ffmpeg-static`; in packaged builds the path is rewritten to
-`app.asar.unpacked` (see `asarUnpack` in `package.json`).
+| File | Responsibility |
+| --- | --- |
+| `file.ts` | `RandomAccessFile`: size + batched `readRanges`, so thousands of small metadata samples cost one host round trip. |
+| `mp4.ts` | Minimal ISO-BMFF reader: finds `moov` by walking box headers (works with moov-at-end 9 GB files), reads tracks (handler, sample-entry four-cc, size, rotation) and sample tables (offsets, sizes, times). |
+| `protobuf.ts` | Schema-less protobuf decoding for camera metadata. |
+| `cameras/` | `CameraAdapter` registry. `dji.ts` detects the `djmd` track, reads the model (`DJI AC003` → Osmo Action 4), and turns per-frame orientation quaternions into gravity-projected yaw rate. Some recordings interleave stray orientation streams (2.3–3 rad away, wrong-sign turn rates) around dropped frames. Samples are therefore split into continuity tracks (a jump is capped at 1.5 rad even across gaps), rates are measured within each track, and tracks that overlap a larger one are dropped. GoPro (GPMF) is planned for M5. |
+| `probe.ts` | `probeVideo`: codec, size, fps, frame count, audio, camera, and whether motion data is available. Picks the longest visual track (DJI adds an MJPEG thumbnail track). |
 
-## Known rough edges
+## Sync (`src/core/sync/`, `src/app/sync/`)
 
-- **Export types are declared three times**: `electron/exportVideo.ts`,
-  `src/types/electron.d.ts` and `src/renderer/export/OverlayFrame.tsx`. Keep
-  them in sync when adding a component type.
-- Adding an overlay type touches: `overlayConfig.ts`, `overlayPresets.ts`
-  (materialise + type union), `OverlayFrame.tsx` (definition, `componentBox`,
-  render switch), the three export type copies, `hasTelemetry` in
-  `exportVideo.ts`, and several places in `App.tsx` (series memo,
-  `previewableOverlays`, preview sizing, editor panel, `startExport`).
-- Preview sizing in `App.tsx` reimplements `componentBox` from `OverlayFrame`
-  in percentages instead of reusing it.
-- `sampleAt` (telemetry.ts) and `samplePoints` (gauge.ts) are duplicate
-  interpolators; `niceRange`/`dataRange` exist in both `App.tsx` and
-  `overlayPresets.ts`.
-- `serializeOverlayPreset` exists but there is no save/load preset UI, and
-  layouts are not persisted between sessions.
-- Only Windows (NSIS) packaging is configured.
+Sync is defined as **video time = offset + logger time × (1 + drift)**. The
+app converts through `timeMap` / `useActivePair().time` (`toData`,
+`toVideo`); never add or subtract the offset directly.
+
+| File | Responsibility |
+| --- | --- |
+| `fft.ts` | Radix-2 FFT, cross-correlation, and `maskedLagSums` (the six lag sums for a Pearson r that ignores missing samples). |
+| `engine.ts` | `synchronize(logger, camera)`, in steps:<br>1. Resample both to 50 Hz, marking gaps over 0.5 s as missing (NaN), and clip spikes.<br>2. Masked Pearson r at every lag in one FFT pass.<br>3. Peak candidates of the dominant sign, refined to sub-sample, with the half-split drift check when peaks are close (laps of the same track).<br>4. Robust pass: drop 5 s windows that disagree at the chosen offset, and refine on the rest (`coverage`).<br>5. Line fit of 10 s window offsets: clock `drift` (recordings of at least 120 s) and `precision` (scatter around the line).<br>6. Confidence from strength, separation and coverage.<br>It runs twice: once requiring the overlap of contained recordings (80% of the shorter one: a lap inside a video, a video inside a session) and once allowing partly overlapping ones (30%, at least 30 s: a camera started minutes after the logger and stopped after it). The more confident result wins, the contained one on a tie. A partial overlap is out of reach of the contained search, which then settles on a wrong lap. |
+| `yaw.ts` | `loggerYaw(session)`: the gyro yaw channel, else the rate of GPS heading, else the GPS course over 2 m steps. GPS-derived signals are flagged (about 0.08 s of latency). |
+
+In the app:
+- `app/sync/worker.ts` runs `readMp4` → camera adapter `readMotion` →
+  `synchronize` off the UI thread.
+- The worker's file reads are answered by `app/sync/client.ts` through
+  `FileHost`.
+- The worker is bundled inline (`?worker&inline`), so it works when the
+  app loads from `file://`.
+- `actions.autoSync` applies the result as an undoable edit (method
+  `camera-imu`).
+- `runtimeStore.syncRun` keeps the candidates and both signals for the
+  Sync panel and its plot.
+
+## Widgets (`src/core/widgets/`)
+
+A `WidgetDefinition` declares inputs (bound to canonical channels by
+default), a fixed aspect, the style fields the inspector edits
+(`styleFields`), default style derived from the data, and two drawing
+passes:
+
+- `drawStatic` renders the faces, ticks, track outline and rings into a
+  cached layer, keyed by pixel size, style and bound data. It can return
+  prepared data, such as the track map's projection.
+- `drawDynamic` draws only the moving parts every frame.
+
+`OverlayRenderer.render(ctx, frame, widgets, session, time)` positions
+widgets from fractional rects, resolves bindings once per widget, and
+records `lastFrameMs`. `data.ts` converts values to display units (mph, °F,
+psi, g, or a per-input override in `WidgetInstance.units`) and gives
+widgets the session's laps. `defaults.ts` builds a starting layout from the
+channels present.
+
+| Widget | Inputs | Notes |
+| --- | --- | --- |
+| `gauge` | value (speed) | 240° dial, range from the data's peak |
+| `bar` | value (throttle) | vertical fill |
+| `readout` | value | label + number + unit |
+| `lapTimer` | (laps) | lap number, running lap time, best lap |
+| `delta` | speed | time ahead of or behind the best lap, number and centred bar |
+| `trackMap` | latitude, longitude | outline from the whole session (decimated), car marker |
+| `gMeter` | lateral, longitudinal | rings per 0.5 g, fading 1 s trail, axis-flip options |
+
+## Layout editing (`src/core/layout/`)
+
+| File | Responsibility |
+| --- | --- |
+| `geometry.ts` | Frame-fraction geometry: snap targets (frame edges, centre, 2% safe margin, other widgets' edges and centres), `moveRect` and `resizeRect` with snapping and guides, aspect-locked corner resize, typed resizes around the centre, hit testing. |
+| `templates.ts` | `LayoutTemplate`: a saved layout with canonical bindings (raw column bindings are converted when the column is recognised), applied to any session with fresh ids and a list of channels it lacks. |
+
+## Export (`src/core/export/`, `src/app/export/`)
+
+```
+mediabunny demux ─► VideoDecoder (hardware) ─► compositor ─► VideoEncoder (hardware) ─► mediabunny MP4 mux ─► <path>.part ─► rename
+      └─ AAC packets copied through, with timestamps rebased per segment ──────────────────┘
+```
+
+| File | Responsibility |
+| --- | --- |
+| `plan.ts` | Pure planning: segments from the selected laps plus lead-in/out (video time via the sync, merged where they overlap; whole video when none are selected), output size (NV12-friendly), standard sizes below the source, automatic bitrate (0.12 bits/pixel/frame HEVC, 0.18 H.264), atlas packing, ETA. |
+| `compositor.ts` | `createWebGpuCompositor`: the decoded frame is a zero-copy external texture; each widget is drawn into its own slot of a small overlay atlas; one pass composites, scales to the output size and packs BT.709 limited-range NV12, read back asynchronously (3 in flight). `createCanvasCompositor`: Canvas 2D fallback (`drawImage` + overlay, encoder converts). |
+| `pipeline.ts` | `runExport(job, {signal, onProgress})`: per segment, decode from the keyframe before its start (plus 0.5 s past its end for reordered frames), drop frames outside it, composite with the overlay at that frame's data time, encode (keyframe every 2 s) and mux. Picks the requested codec, falling back to the other one. Audio packets are interleaved as video advances. Cancels with `ExportCancelled`. File I/O is injected (`RandomAccessFile` in, `WriteTarget` out). |
+
+`OverlayRenderer.render` takes an optional `place` callback so export can
+draw each widget at its atlas slot (clipped to its box) with the same widget
+code as the preview.
+
+In the app, `app/export/worker.ts` runs `runExport` in a dedicated worker
+(WebCodecs, WebGPU and OffscreenCanvas all work there), so no extra window
+is created. The spike found that destroying a GPU window broke later ones.
+`app/export/client.ts` answers the worker's reads and writes through
+`FileHost`. `app/exporting.ts` builds the plan from the project and runs
+it, and `components/ExportDialog.tsx` shows settings, progress (fps, real
+time factor, ETA, cancel) and the result.
+
+Output is written to `<path>.part` and renamed when the export finishes,
+or deleted on cancel or failure. In Electron only paths chosen in the save
+dialog are writable (`allowWrite` in `files.ts`).
+
+## App (`src/app/`, `src/App.tsx`)
+
+- `state.ts` has two stores:
+  - `projectStore`: the undoable document (files, sync offset, layout).
+  - `runtimeStore`: decoded data that's never saved (video probes,
+    sessions, raw CSV text, logger profiles, layout templates, playback
+    time, the widget selection and the inspector tab).
+- `layout.ts` has the layout edits: selection, moves and nudges, styles,
+  bindings and units (data-derived style values follow a new channel),
+  layer order, lock and visibility, add, duplicate, delete, and templates.
+- `host.ts` (`FileHost`) is the only place that knows where the app runs:
+  - In Electron it uses IPC, and `media://local/<path>` for `<video>`.
+  - In a plain browser it uses the dev-server endpoints, with
+    `window.prompt` for picking files.
+- `player.ts` is the playback clock: it wraps the `<video>` element, or a
+  virtual clock when only telemetry is loaded. It supports seeking and
+  frame stepping, landing mid-frame.
+- `components/Stage.tsx` (the viewer) draws the overlay on every presented video frame
+  using `requestVideoFrameCallback` and that frame's exact `mediaTime`.
+  Telemetry time comes from the sync's time map. It also shows a
+  performance HUD (draw time, presented fps, dropped frames).
+- `components/LayoutEditor.tsx` sits over the viewer: select (click,
+  Shift/Ctrl-click, marquee), drag to move, corner handles to resize, snap
+  guides (Alt to place freely). Each drag is one undo step.
+- The layout has three columns:
+  - `MediaPanel` (left): source cards with secondary details folded away,
+    and the lap list with gaps to best.
+  - The viewer and `Transport` (centre): custom timeline with lap bands,
+    hover time and drag scrubbing.
+  - `InspectorPanel` (right): Sync and Layout tabs. `LayoutPanel` has
+    the layer list (drag to reorder, show/hide, lock, missing-channel
+    warnings), the Add and Templates menus, and the selected widget's
+    properties. `ChannelPicker` lists channels with their live value and
+    range.
+- Files can also be dropped anywhere in the window (desktop app only;
+  browsers don't expose paths).
+- Styling uses the theme tokens in `src/index.css` and the primitives in
+  `components/ui.tsx`.
+- `components/MappingDialog.tsx` is the column mapping screen. Saving
+  creates a `UserProfileDefinition`, persists it, re-imports with it, and
+  embeds it in the project.
+
+Keyboard: Space play/pause, ←/→ frame step (Shift: 1 s), Ctrl+Z / Ctrl+Y.
+With widgets selected: arrows nudge by an output pixel (Shift: 10), Del
+deletes, Ctrl+D duplicates, Esc clears; Ctrl+A selects all.
+
+## Electron and dev harness
+
+- `electron/main.ts` registers the privileged `media://` scheme (served by
+  `electron/files.ts` with HTTP range support) and IPC for:
+  - picking files and choosing export paths
+  - writing export output (`.part` file, rename or delete)
+  - file size, batched range reads and text reads
+  - logger profiles and layout templates, stored in
+    `userData/logger-profiles.json` and `userData/layout-templates.json`
+- The renderer may only read files the user picked, and write only export
+  paths chosen in the save dialog (allowlists in `files.ts`).
+- `PlatformHEVCEncoderSupport` is enabled for WebCodecs HEVC encoding.
+- `electron/log.ts` writes `userData/logs/telemetry-overlay.log` (rotated
+  at 2 MB). It records versions and GPU at start, uncaught main-process
+  errors, renderer and GPU process crashes, and renderer messages sent
+  over `log:write`. `src/app/logging.ts` forwards uncaught renderer errors
+  and every error the UI shows. A crashed renderer gets a Reload / Open log
+  folder dialog.
+- The built page carries a Content-Security-Policy (added by a build-only
+  Vite plugin): scripts from the app only, inline blob workers, video from
+  `media://`.
+- `--smoke-test` (also in packaged builds) loads the UI, prints
+  `SMOKE_RESULT` with any console errors and quits. `--screenshot=<png>`
+  saves the window. Dev builds also take `--smoke-wait` and `--smoke-eval`.
+- Dev only: `TELEMETRY_OVERLAY_AUTOTEST='{"video":…,"csv":…,"export":…,"laps":"3"}'`
+  opens the files, exports, prints the `EXPORT_RESULT` line and quits
+  (ignored in packaged builds). The browser harness takes the same keys as
+  query parameters.
+- `dev/fileServer.ts` is a Vite dev-server middleware (`apply: 'serve'`,
+  loopback only) providing the same operations, so `npm run dev:browser`
+  runs the UI in a normal browser. `?video=…&csv=…&offset=…` loads files
+  directly in that mode.

@@ -1,12 +1,47 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Neutral graphite surfaces (no blue cast) so the video and
+ * overlay colours read true; one warm accent for primary actions, the
+ * playhead and selection.
+ */
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+  --color-canvas: #0c0c0d;
+  --color-surface: #141416;
+  --color-raised: #1c1c1f;
+  --color-hover: #26262a;
+  --color-line: #2a2a2e;
+  --color-line-strong: #3a3a40;
+
+  --color-fg: #ececee;
+  --color-fg-muted: #a3a3ab;
+  --color-fg-subtle: #6e6e76;
+
+  --color-accent: #f59e42;
+  --color-accent-hover: #ffb062;
+  --color-accent-fg: #1a1206;
+  --color-accent-soft: rgb(245 158 66 / 0.14);
+
+  /* Secondary data series in plots (the camera signal in the sync plot). */
+  --color-info: #7cc4fa;
+
+  --color-good: #4ade80;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+}
+
 :root {
-  font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   color-scheme: dark;
-  color: #e6edf7;
-  background: #070b12;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-fg);
+  background: var(--color-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -14,19 +49,18 @@
 }
 
 html,
-body {
+body,
+#root {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at 70% -20%, rgb(20 184 166 / 0.09), transparent 36rem),
-    #070b12;
+  height: 100%;
+  min-width: 1080px;
 }
 
 button,
 input,
 select {
   font: inherit;
+  color: inherit;
 }
 
 button {
@@ -34,114 +68,30 @@ button {
 }
 
 button:disabled {
-  cursor: not-allowed;
+  cursor: default;
 }
 
-input[type="range"] {
-  accent-color: #2dd4bf;
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
-.timeline-range {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  background: transparent;
-  pointer-events: none;
-  -webkit-appearance: none;
-  appearance: none;
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-.timeline-range::-webkit-slider-runnable-track {
-  height: 100%;
-  background: transparent;
-  border: none;
-}
-
-.timeline-range::-moz-range-track {
-  height: 100%;
-  background: transparent;
-  border: none;
-}
-
-.timeline-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  pointer-events: auto;
-  width: 14px;
-  height: 22px;
-  margin-top: -3px;
-  border-radius: 3px;
-  border: 1px solid rgb(15 23 42 / 0.85);
-  background: #f8fafc;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
-  cursor: ew-resize;
-}
-
-.timeline-range::-moz-range-thumb {
-  pointer-events: auto;
-  width: 14px;
-  height: 22px;
-  border-radius: 3px;
-  border: 1px solid rgb(15 23 42 / 0.85);
-  background: #f8fafc;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
-  cursor: ew-resize;
-}
-
-.timeline-range-in::-webkit-slider-thumb,
-.timeline-range-out::-webkit-slider-thumb {
-  background: #2dd4bf;
-}
-
-.timeline-range-in::-moz-range-thumb,
-.timeline-range-out::-moz-range-thumb {
-  background: #2dd4bf;
-}
-
-.timeline-range-playhead {
-  pointer-events: auto;
-}
-
-.timeline-range-playhead::-webkit-slider-thumb {
-  width: 14px;
-  height: 14px;
-  margin-top: 0;
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border: 3px solid transparent;
   border-radius: 999px;
-  border: 2px solid #f8fafc;
-  background: #0f172a;
-  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.55), 0 1px 4px rgb(0 0 0 / 0.45);
-  cursor: grab;
+  background-clip: padding-box;
 }
 
-.timeline-range-playhead::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  border: 2px solid #f8fafc;
-  background: #0f172a;
-  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.55), 0 1px 4px rgb(0 0 0 / 0.45);
-  cursor: grab;
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-line-strong);
 }
 
-.checkerboard {
-  background-color: #141a23;
-  background-image:
-    linear-gradient(45deg, #1b2430 25%, transparent 25%),
-    linear-gradient(-45deg, #1b2430 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #1b2430 75%),
-    linear-gradient(-45deg, transparent 75%, #1b2430 75%);
-  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
-  background-size: 24px 24px;
-}
-
-#root {
-  min-height: 100vh;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.tabular {
+  font-variant-numeric: tabular-nums;
 }

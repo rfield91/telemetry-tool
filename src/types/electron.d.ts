@@ -1,137 +1,29 @@
-import type { OverlayDefinition } from '../renderer/export/OverlayFrame'
-
 declare global {
-interface ExportOverlaySetup {
-  width: number
-  height: number
-  overlay: OverlayDefinition
-}
+  /** package.json version, defined by Vite. */
+  const __APP_VERSION__: string
 
-interface ExportTelemetryPoint {
-  time: number
-  value: number
-}
-
-interface ExportGpsPoint {
-  time: number
-  lat: number
-  lon: number
-}
-
-interface ExportGaugeDefinition {
-  id: string
-  type: 'gauge'
-  label: string
-  unit: string
-  min: number
-  max: number
-  accent?: string
-  x: number
-  y: number
-  size: number
-  points: ExportTelemetryPoint[]
-}
-
-interface ExportTrackMapDefinition {
-  id: string
-  type: 'track-map'
-  label: string
-  accent?: string
-  x: number
-  y: number
-  size: number
-  points: ExportGpsPoint[]
-}
-
-interface ExportBarDefinition {
-  id: string
-  type: 'bar'
-  label: string
-  min: number
-  max: number
-  accent?: string
-  x: number
-  y: number
-  size: number
-  points: ExportTelemetryPoint[]
-}
-
-interface ExportKeyValueEntryDefinition {
-  id: string
-  label: string
-  unit: string
-  accent?: string
-  points: ExportTelemetryPoint[]
-}
-
-interface ExportKeyValueDefinition {
-  id: string
-  type: 'key-value'
-  accent?: string
-  stack: 'vertical' | 'horizontal'
-  x: number
-  y: number
-  size: number
-  entries: ExportKeyValueEntryDefinition[]
-}
-
-interface ExportGMeterDefinition {
-  id: string
-  type: 'g-meter'
-  label: string
-  maxG: number
-  accent?: string
-  x: number
-  y: number
-  size: number
-  lateralPoints: ExportTelemetryPoint[]
-  longitudinalPoints: ExportTelemetryPoint[]
-}
-
-type ExportOverlayComponent =
-  | ExportGaugeDefinition
-  | ExportTrackMapDefinition
-  | ExportBarDefinition
-  | ExportKeyValueDefinition
-  | ExportGMeterDefinition
-
-interface ExportVideoRequest {
-  id: string
-  outputPath: string
-  width: number
-  height: number
-  fps: number
-  /** Telemetry time (seconds) of the first exported frame. Defaults to 0. */
-  startTime?: number
-  /** Length of the exported clip in seconds. */
-  duration: number
-  overlay: {
-    components: ExportOverlayComponent[]
+  interface TelemetryOverlayApi {
+    pickFile(kind: 'video' | 'csv'): Promise<string | null>
+    pathForDroppedFile(file: File): Promise<string | null>
+    fileSize(path: string): Promise<number>
+    readRanges(path: string, ranges: Array<{ offset: number; length: number }>): Promise<Uint8Array[]>
+    readText(path: string): Promise<string>
+    pickSavePath(defaultPath: string): Promise<string | null>
+    openOutput(path: string): Promise<number>
+    writeOutput(id: number, position: number, bytes: Uint8Array): Promise<void>
+    finishOutput(id: number): Promise<void>
+    abortOutput(id: number): Promise<void>
+    revealFile(path: string): Promise<void>
+    writeLog(level: 'info' | 'warn' | 'error', message: string): Promise<void>
+    revealLogs(): Promise<string>
+    loadProfiles(): Promise<unknown>
+    saveProfiles(profiles: unknown): Promise<void>
+    loadTemplates(): Promise<unknown>
+    saveTemplates(templates: unknown): Promise<void>
   }
-}
-
-interface ExportProgress {
-  id: string
-  frame: number
-  totalFrames: number
-  percent: number
-  status: 'rendering' | 'encoding' | 'complete'
-}
-
-interface TelemetryOverlayApi {
-  openCsv(): Promise<{ name: string; text: string } | null>
-  chooseExportPath(suggestedName: string): Promise<string | null>
-  startExport(
-    request: ExportVideoRequest,
-  ): Promise<{ outputPath: string; totalFrames: number }>
-  cancelExport(exportId: string): Promise<void>
-  onExportProgress(listener: (progress: ExportProgress) => void): () => void
-}
 
   interface Window {
     telemetryOverlay?: TelemetryOverlayApi
-    setExportOverlay?: (setup: ExportOverlaySetup) => Promise<boolean>
-    renderOverlayFrame?: (time: number) => Promise<boolean>
   }
 }
 

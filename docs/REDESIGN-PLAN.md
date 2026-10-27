@@ -165,6 +165,16 @@ channels and laps with tests, and a project round-trips through save/load.
 **Done when** a DJI video and a CSV play together with a hand-entered offset
 and five widgets at 60 fps.
 
+**Status (2026-10-26): done.**
+- The NER DJI video (2.7K60 10-bit HEVC) and the Solostorm lap played
+  together at offset 29.146 s with seven widgets.
+- In steady playback: 300 frames decoded in 5 s with 0 dropped, 58.8 fps
+  presented, and the overlay drew in 0.19 ms per frame on average (0.40 ms
+  max).
+- Verified in the browser harness (`npm run dev:browser`). Electron file
+  access (media:// ranges, IPC) is covered by unit tests but hasn't been
+  exercised in a real Electron window yet.
+
 ### M2 — Auto-sync
 
 - Move the sync engine into a worker with progress reporting.
@@ -189,6 +199,60 @@ no user input, matching the spike results (29.146 s; lap at 4:14.69). A
 full-session export of SVT Canaan should sync once, with every lap
 selectable.
 
+**Status (2026-10-26): core done; three items open.**
+
+Done:
+- Sync engine in `src/core/sync/`: FFT-based normalised correlation over
+  all lags, peak candidates, the half-split drift check, per-window
+  precision and a confidence level.
+- It runs in a worker. Camera motion comes through the camera adapter, and
+  file reads go over an RPC to `FileHost`.
+- Auto-sync runs on load when the camera has motion data. It is undoable,
+  and never overwrites an offset you changed meanwhile.
+- The Sync panel shows status (match, precision), the data-vs-camera yaw
+  plot around the playhead, nudges, and **Other matches** with Use / Go
+  back.
+- Lap list checkboxes set the export selection.
+- Logger yaw falls back to GPS heading, then GPS course. These are about
+  0.07–0.08 s behind the gyro (GPS latency), and the UI says ±0.1 s.
+
+Verified in the browser harness, with no user input:
+
+| Session | Offset | Spike result | Notes |
+| --- | --- | --- | --- |
+| NER | 29.146 s | 29.146 s | match 0.99, ±6 ms |
+| SVT | 254.693 s | lap at 4:14.69 | picked from 8 similar laps; drift 0.02 s vs 0.41 s for the runner-up |
+
+The same results are pinned in `src/core/sync/sync.test.ts` using camera-yaw
+fixtures extracted from the real videos.
+
+**Full session (2026-10-26).** `svt-canaan-session.csv` (12 laps, 800 s)
+first synced at 127.86 s with match 0.81 and ±242 ms. There were three
+causes:
+- **Interleaved orientation streams.** The DJI file writes other streams
+  2.3–3 rad away from the main one, around dropped-frame stretches (video
+  798–918 s). Read as one stream, they produced ±150 rad/s spikes and
+  wrong-sign turn rates.
+- **Equal weighting.** The engine trusted every window equally.
+- **Clock drift.** The logger clock runs 46 ppm fast relative to the camera,
+  about 37 ms over the session.
+
+Fixes:
+- The DJI decode splits samples into continuity tracks and drops stray ones.
+- The engine ignores gaps (masked FFT correlation) and excludes windows that
+  disagree.
+- Drift is fitted and applied (`sync.drift`).
+
+It now reads match 0.99, 99% coverage, ±34 ms, and places lap 37 at
+254.692 s (single-lap export: 254.693 s).
+
+Open:
+- **Tier 2 image motion** for cameras without motion data. The panel says
+  to set the offset by hand for now.
+- **Lap thumbnails** in the lap list.
+- The AiM `GPS Gyro` sign is still unchecked against video. Correlation
+  ignores sign, so sync doesn't depend on it.
+
 ### M3 — Layout editor
 
 - Direct manipulation on the video stage: drag, resize, snap to edges,
@@ -202,6 +266,41 @@ selectable.
 
 **Done when** a user can build the AiM-default layout from scratch in under
 two minutes, and apply it to a Solostorm session.
+
+**Status (2026-10-26): done except custom fonts; the two-minute build is
+not yet timed by a person.**
+- Stage editing: click or marquee to select, Shift/Ctrl-click to add,
+  drag to move, corner handles to resize (aspect kept, opposite corner
+  fixed). Moves and resizes snap to the frame edges, centre, a 2% safe
+  margin, and other widgets' edges and centres, with guides; Alt places
+  freely. Arrows nudge by one output pixel (Shift: ten), Ctrl+D
+  duplicates, Del deletes, Ctrl+A selects all, Esc clears. Each drag is one
+  undo step.
+- The right column has Sync and Layout tabs. Layout has the layer list
+  (front first, drag to reorder, show/hide, lock, a warning when the data
+  lacks a bound channel) and the selected widget's properties: channel
+  picker with each channel's live value and range, display unit, style
+  fields declared by each widget (`styleFields`), and position in pixels.
+  Changing a channel moves data-derived style values (a gauge's range) and
+  channel-named labels along with it; values the user edited stay.
+- Templates (`core/layout/templates.ts`) store canonical bindings, so a
+  layout built on Solostorm data resolved every channel on the AiM file in
+  the harness, and the reverse is a unit test. They're saved to
+  `userData/layout-templates.json` (localStorage in the browser harness).
+- New widgets: lap timer (lap number, running time, best lap) and delta to
+  best lap. Delta is distance-based: speed is integrated into distance and
+  each lap is scaled to the best lap's length. On the 12-lap SVT session it
+  is 0 on the best lap and matches each lap's time difference at the line
+  to within 5 ms.
+- The default layout adds the lap timer when the data has laps, and the
+  delta when there are at least two timed laps.
+- The full 10-widget layout draws in 0.1 ms per frame (0.3 ms p95) at
+  2688×1512.
+- Verified in the browser harness by driving pointer events, keyboard
+  shortcuts and the menus. The harness pane was too small for a useful
+  visual review of the new panels.
+- **Open:** font choice for overlay text; template import/export to a file
+  for sharing; align and distribute commands for multi-selections.
 
 ### M4 — Export
 
@@ -220,6 +319,39 @@ two minutes, and apply it to a Solostorm session.
 **Done when** the full DJI session exports with overlay and audio at ≥3x
 real time, and the output plays in common players and editors.
 
+**Status (2026-10-26): done; playback in other players and editors not
+checked yet.**
+- The full SVT Canaan session (DJI Osmo Action 4, 8.8 GB, 2688×1512 10-bit
+  HEVC, 16:29) exported in the Electron app with the 10-widget layout and
+  audio in **191 s: 5.2x real time (306 fps)**. That's HEVC at 29.2 Mb/s
+  with the WebGPU compositor, measured on an RTX 3070 Ti. The run was
+  repeated with byte-identical output, and memory stayed flat at about
+  2.1 GB.
+- Output checks with ffprobe and ffmpeg:
+  - all 58,300 source frames are kept with their original timing (the
+    camera dropped some, so the average is 58.92 fps);
+  - AAC audio has the same length;
+  - a full decode is error-free;
+  - the container has a BT.709 `colr` box.
+- Frames checked at 0:28 into lap 37 and at 14:30 (in-lap, after the
+  camera's dropped frames) match the car's dash display.
+- Lap export: lap 37 plus 2 s either side came out as 3946 frames and
+  65.8 s, with the lap timer at 0:28.0 and delta +0.00 on the best lap.
+- Export runs in a worker in the main window, not a separate window, so
+  the spike's GPU-window teardown problem doesn't arise. Two exports in a
+  row both used WebGPU and produced identical files.
+- The Canvas 2D fallback (H.264) produced the same lap. Cancelling deletes
+  the `.part` file.
+- **Open:**
+  - One early run exited at about 94% with no error output, leaving the
+    `.part` file. This was before crash logging was added to the autotest
+    hook; the next two runs were clean. Watch for it.
+  - Check that the output plays in VLC, Windows Media Player, Premiere and
+    DaVinci Resolve.
+  - Exports per lap as separate files; non-lap trim points.
+  - HEVC's in-stream color info is unspecified (only the container is
+    tagged).
+
 ### M5 — Breadth and polish
 
 - **GoPro camera adapter:** GPMF gyro and accelerometer for sync; GPS with
@@ -233,6 +365,52 @@ real time, and the output plays in common players and editors.
 - Windows installer (NSIS), first-run experience, error reporting.
 - A short "adding a camera / logger" guide, using the DJI adapter and the
   Solostorm profile as worked examples.
+
+**Status (2026-10-26): installer, first run, error reporting and the guide
+are done. GoPro, chapters, rotation/HDR and other GPUs are deferred (no
+GoPro footage yet).**
+- **Installer:** `npm run dist` builds a 100 MB NSIS installer. The app
+  itself is an 880 KB `app.asar`; the rest is Electron.
+  - All npm packages became dev dependencies, because Vite bundles
+    everything the app uses. This drops about 80 MB of ffmpeg from the
+    install.
+  - Assisted setup with a chosen folder, Start menu and desktop shortcuts.
+  - A generated app icon (`npm run icon`, `scripts/make-icon.mjs`).
+  - Electron is copied from `node_modules` (`electronDist`), because
+    extracting its zip failed when Windows held the fresh files.
+  - The packaged exe passes `--smoke-test`: the UI renders, the preload
+    API is present, and there are no console errors under the CSP. The
+    installer itself hasn't been run.
+- **Security:** the built page has a Content-Security-Policy (build only,
+  since dev needs inline scripts). A lap export under it still runs on
+  WebGPU at 4.8x real time.
+- **Error reporting:** `userData/logs/telemetry-overlay.log` (rotated at
+  2 MB) records:
+  - the app, Electron, Windows and GPU versions;
+  - uncaught main and renderer errors, and renderer/GPU process crashes;
+  - every error the UI shows, and export results.
+  A crashed window offers Reload or "Open log folder". The header's help
+  menu opens the folder and shows the version.
+- **First run:** the start screen adds a three-step outline (sync, lay out,
+  export) under the Add buttons.
+- **AiM XRK files** (added 2026-10-27): the binary logs load directly,
+  without a Race Studio CSV export. Checked against `sample-data/3.csv`, the
+  CSV export of the same session: same time zero, GPS speed within
+  3 mm/s RMS, identical positions and ECU values. The XRK has the logger's
+  50 Hz gyro (`YawRate`), which correlates with the CSV's `GPS Gyro` at
+  r = 0.95 with the same sign. Expansion-device data isn't decoded yet.
+- **Partly overlapping recordings** (2026-10-27): the Thompson DJI video
+  starts ~9 minutes before the logger and stops ~9 minutes before it, so
+  they overlap for about half of each. Auto-sync used to require 80% overlap
+  and found nothing. It now also searches with 30% (at least 30 s) and keeps
+  the more confident result: offset 539.264 s, match 0.99, ±6 ms, 82 ppm
+  drift, and every timed lap lands on the driving part of the video.
+- **Guide:** `docs/EXTENDING.md` covers adding a logger profile
+  (Solostorm) or a camera adapter (DJI), with fixtures, tests and a
+  checklist.
+- Full-window screenshots of the start screen, editor and export dialog
+  were captured from Electron (`--smoke-test --screenshot=…`). They
+  caught the toggle switches' knob drawing outside the track, now fixed.
 
 ## Performance budgets
 
